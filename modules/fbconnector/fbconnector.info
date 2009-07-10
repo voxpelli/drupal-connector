@@ -1,0 +1,7 @@
+; $Id$
+name = Facebook Connector
+description = Facebook support for the Connector module
+core = 6.x
+version = "6.x-0.1"
+package = "Connector"
+dependencies[] = connector

@@ -1,0 +1,163 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Connector module
+ */
+
+//TODO: Take variable_get('user_email_verification', TRUE) into account
+//TODO: Add cron for updating information? Important for Facebook!
+
+/**
+ * Implementation of hook_theme().
+ */
+function connector_theme() {
+  return array(
+    'connector_one_click_block' => array(
+      'template' => 'connector-one-click-block',
+      'arguments' => array('buttons' => array()),
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_block().
+ */
+function connector_block($op = 'list', $delta = 0) {
+  global $user;
+
+  if ($op == 'list') {
+    $block['one_click_block']['info'] = t('Sign in with other site');
+    return $block;
+  }
+  elseif ($op == 'view') {
+    switch ($delta) {
+      case 'one_click_block':
+        if (!$user->uid) {
+          return array(
+            'content' => theme('connector_one_click_block'),
+          );
+        }
+        break;
+    }
+  }
+}
+
+/**
+ * Implementation of hook_user().
+ */
+function connector_user($op, &$edit, &$user, $category = NULL) {
+  switch ($op) {
+    case 'logout':
+      $connectors = _connector_get_connectors();
+      $connections = _connector_get_user_connections($user);
+      foreach ($connections as $connection) {
+        if (array_key_exists($connection->connector, $connectors)) {
+          $connector = $connectors[$connection->connector];
+          if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
+            call_user_func($connector['logout callback'], $connection->cid);
+          }
+        }
+      }
+      break;
+  }
+}
+
+function _connector_get_connectors($connector = NULL) {
+  static $connectors;
+
+  if (!isset($connectors)) {
+    //TODO: Do some caching
+    $connectors = (array) module_invoke_all('connector');
+    drupal_alter('connector', $connectors);
+  }
+
+  if ($connector) {
+    if (array_key_exists($connector, $connectors)) {
+      return $connectors[$connector];
+    }
+    else {
+      return FALSE;
+    }
+  }
+
+  return $connectors;
+}
+
+function _connector_get_user_connections($account) {
+  $connectors = array();
+
+  $result = db_query("SELECT authname FROM {authmap} WHERE module = 'connector' AND uid = %d", $account->uid);
+  while ($row = db_fetch_object($result)) {
+    $row = explode('::', $row->authname, 2);
+    if (count($row) === 2) {
+      $connectors[] = (object) array(
+        'connector' => $row[0],
+        'cid' => $row[1],
+      );
+    }
+  }
+
+  return $connectors;
+}
+
+function _connector_log_in($connector_name) {
+  global $user;
+
+  if (user_is_logged_in()) {
+    return FALSE;
+  }
+
+  $connector = _connector_get_connectors($connector_name);
+  if (!$connector) {
+    return FALSE;
+  }
+
+  //Fetch connector ID
+  if (isset($connector['id callback']) && is_callable($connector['id callback'])) {
+    $cid = call_user_func($connector['id callback']);
+  }
+
+  if ($cid) {
+    $account = user_external_load("$connector_name::$cid");
+    if (!$account) {
+      //Register user
+      user_external_login_register("$connector_name::$cid", 'connector');
+      _connector_update_information($user);
+    }
+    else {
+      //Log in user
+      user_external_login($account);
+      drupal_goto();
+    }
+  }
+}
+
+function _connector_update_information($account) {
+  //TODO: Configure which information we want fetched
+  //TODO: Configure fetching information from many sources
+  $connections = _connector_get_user_connections($account);
+  $connector = _connector_get_connectors($connections[0]->connector);
+  if ($connector) {
+    if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
+      $info = call_user_func($connector['information callback'], $connections[0]->cid);
+    }
+  }
+
+  if (!empty($info)) {
+    //TODO: Do some updates
+  }
+}
+
+function template_preprocess_connector_one_click_block(&$vars) {
+  if (empty($vars['buttons'])) {
+    $vars['buttons'] = array();
+    $connectors = _connector_get_connectors();
+    foreach ($connectors as $key => $connector) {
+      if (isset($connector['button callback']) && is_callable($connector['button callback'])) {
+        $vars['buttons'][] = call_user_func($connector['button callback']);
+      }
+    }
+  }
+}

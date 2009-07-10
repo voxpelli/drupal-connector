@@ -1,0 +1,150 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Connector module
+ */
+
+/**
+ * Implementation of hook_connector().
+ */
+function fbconnector_connector() {
+  $items = array();
+
+  $items['fbconnector'] = array(
+    'button callback'      => '_fbconnector_button',
+    'id callback'          => '_fbconnector_id',
+    'logout callback'      => '_fbconnector_logout',
+    'information callback' => '_fbconnector_info',
+  );
+
+  return $items;
+}
+
+/**
+ * Implementation of hook_theme().
+ */
+function fbconnector_theme() {
+  $theme = array(
+    'fbconnector_button' => array(
+      'arguments' => array(),
+    ),
+  );
+
+  return $theme;
+}
+
+/**
+ * Implementation of hook_init().
+ */
+function fbconnector_init() {
+  global $user;
+
+  if ($user->uid == 0) {
+    if (_fbconnector_client()->get_loggedin_user()) {
+      if (_connector_log_in('fbconnector')) {
+        drupal_goto();
+      }
+    }
+  }
+}
+
+/**
+ * Implementation of hook_footer().
+ */
+function fbconnector_footer() {
+  return '<script type="text/javascript" src="http://static.ak.connect.facebook.com/js/api_lib/v0.4/FeatureLoader.js.php"></script>';
+}
+
+function _fbconnector_client() {
+  //TODO: Make API key and secret customizable
+  static $fb = NULL;
+  if (!$fb instanceof Facebook) {
+    if (!class_exists('Facebook')) {
+      include_once(drupal_get_path('module', 'fbconnector') . '/facebook-platform/facebook.php');
+    }
+    $fb = new Facebook('034e7f8fdbcd7af88b4906828c58a598', '3f1bf87059c2eb3eefaa2ef0825d0d82');
+  }
+  return $fb;
+}
+
+/**
+ * Fetches avatar
+ */
+/*function _fbconnector_get_avatar($cid) {
+  //TODO: Make size configurable
+  try {
+    $result = _fbconnector_client()->api_client->fql_query("SELECT 'pic_with_logo' FROM user WHERE uid = $cid");
+    return $result[0];
+  } catch (Exception $e) {
+    watchdog('fbconnect', 'Exception thrown while using _fbconnector_get_avatar : @code', array('@code' => $e->getMessage()), WATCHDOG_WARNING);
+  }
+}*/
+
+/**
+ * Information callback
+ */
+function _fbconnector_info($cid) {
+  $info = array();
+
+  $result = _fbconnector_client()->api_client->users_getInfo($cid, array(
+    'name',
+    'pic_square_with_logo',
+  ));
+
+  $info['real name'] = $result[0]['name'];
+  $info['avatar']    = $result[0]['pic_square_with_logo'];
+
+  return $info;
+}
+
+/**
+ * Logout callback
+ */
+function _fbconnector_logout($cid) {
+  $client = _fbconnector_client();
+  if ($client->get_loggedin_user() == $cid) {
+    $client->clear_cookie_state();
+  }
+}
+
+/**
+ * Connector ID callback
+ */
+function _fbconnector_id() {
+  return _fbconnector_client()->get_loggedin_user();
+}
+
+/**
+ * Connector button callback
+ */
+function _fbconnector_button() {
+  //TODO: Make API key customizable
+  drupal_add_js(array(
+    'fbconnector_api_key'     => '034e7f8fdbcd7af88b4906828c58a598',
+    'fbconnector_xd_receiver' => check_plain(url(drupal_get_path('module', 'fbconnector') . '/xd_receiver.htm')),
+  ), 'setting');
+
+  return array(
+    'title' => theme('fbconnector_button') . drupal_get_form('fbconnector_log_in_form'),
+    'html'  => TRUE,
+  );
+}
+
+/**
+ * Form for triggering log in (escaping the caching)
+ */
+function fbconnector_log_in_form() {
+  return array(
+    'fbconnector' => array('#type' => 'value', '#value' => TRUE),
+  );
+}
+
+/**
+ * Theme function for the button
+ */
+function theme_fbconnector_button() {
+  drupal_add_js(drupal_get_path('module', 'fbconnector') . '/fbconnector.js', 'theme', 'footer');
+  return '<fb:login-button onlogin="fbconnector_login();"></fb:login-button>';
+}
