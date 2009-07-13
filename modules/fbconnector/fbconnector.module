@@ -17,6 +17,7 @@ function fbconnector_connector() {
     'id callback'          => '_fbconnector_id',
     'logout callback'      => '_fbconnector_logout',
     'information callback' => '_fbconnector_info',
+    'avatar callback'      => '_fbconnector_avatar',
   );
 
   return $items;
@@ -70,17 +71,17 @@ function _fbconnector_client() {
 }
 
 /**
- * Fetches avatar
+ * Avatar callback
  */
-/*function _fbconnector_get_avatar($cid) {
-  //TODO: Make size configurable
-  try {
-    $result = _fbconnector_client()->api_client->fql_query("SELECT 'pic_with_logo' FROM user WHERE uid = $cid");
-    return $result[0];
-  } catch (Exception $e) {
-    watchdog('fbconnect', 'Exception thrown while using _fbconnector_get_avatar : @code', array('@code' => $e->getMessage()), WATCHDOG_WARNING);
+function _fbconnector_avatar($cid) {
+  $result = _fbconnector_client()->api_client->users_getInfo($cid, array(
+    'pic_square_with_logo',
+  ));
+
+  if (!empty($result)) {
+    return $result[0]['pic_square_with_logo'];
   }
-}*/
+}
 
 /**
  * Information callback
@@ -90,11 +91,11 @@ function _fbconnector_info($cid) {
 
   $result = _fbconnector_client()->api_client->users_getInfo($cid, array(
     'name',
-    'pic_square_with_logo',
   ));
 
-  $info['real name'] = $result[0]['name'];
-  $info['avatar']    = $result[0]['pic_square_with_logo'];
+  if (!empty($result)) {
+    $info['real name'] = $result[0]['name'];
+  }
 
   return $info;
 }
