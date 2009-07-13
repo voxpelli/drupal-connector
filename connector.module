@@ -68,7 +68,6 @@ function _connector_get_connectors($connector = NULL) {
   static $connectors;
 
   if (!isset($connectors)) {
-    //TODO: Do some caching
     $connectors = (array) module_invoke_all('connector');
     drupal_alter('connector', $connectors);
   }
@@ -124,18 +123,39 @@ function _connector_log_in($connector_name) {
     if (!$account) {
       //Register user
       user_external_login_register("$connector_name::$cid", 'connector');
-      _connector_update_information($user);
+      _connector_information_update($user);
     }
     else {
       //Log in user
       user_external_login($account);
-      _connector_update_information($user); //TODO: Remove this?
-      drupal_goto();
+      _connector_information_update($user); //TODO: Remove this?
     }
+    drupal_goto();
   }
 }
 
-function _connector_update_information($account) {
+function _connector_information_fetch($uid) {
+  static $cache;
+
+  if (is_object($uid)) {
+    $uid = $uid->uid;
+  }
+
+  if (empty($cache)) {
+    $cache = array();
+  }
+
+  if (!isset($cache[$uid])) {
+    $result = db_result(db_query('SELECT name FROM {connector_name} WHERE uid = %d', array(
+      ':uid' => $uid,
+    )));
+    $cache[$uid] = empty($result) ? FALSE : array('real name' => $result);
+  }
+
+  return $cache[$uid];
+}
+
+function _connector_information_update($account) {
   //TODO: Configure which information we want fetched
   //TODO: Configure fetching information from many sources
   $connections = _connector_get_user_connections($account);
@@ -150,7 +170,14 @@ function _connector_update_information($account) {
   }
 
   if (!empty($info)) {
-    //TODO: Do some updates
+    if (!empty($info['real name'])) {
+      $real_name = (object) array(
+        'uid'     => $account->uid,
+        'name'    => $info['real name'],
+        'created' => time(),
+      );
+      drupal_write_record('connector_name', $real_name);
+    }
   }
 
   if (!empty($avatar)) {

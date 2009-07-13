@@ -1,0 +1,60 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Database and updating for the connector module
+ */
+
+/**
+ * Implementation of hook_schema().
+ */
+function connector_schema() {
+  $schema = array();
+
+  $schema['connector_name'] = array(
+    'fields' => array(
+      'uid' => array(
+        'type'        => 'int',
+        'unsigned'    => TRUE,
+        'not null'    => TRUE,
+        'default'     => 0,
+        'description' => 'The id of the user',
+      ),
+      'name' => array(
+        'type'        => 'varchar',
+        'length'      => 80,
+        'not null'    => TRUE,
+        'default'     => '',
+        'description' => 'Real name',
+      ),
+      'created' => array(
+        'type'        => 'int',
+        'unsigned'    => TRUE,
+        'not null'    => TRUE,
+        'default'     => 0,
+        'description' => 'The Unix timestamp when the name was fetched',
+      ),
+    ),
+    'primary key' => array('uid'),
+    'indexes' => array(
+      'created' => array('created'),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implementation of hook_install().
+ */
+function connector_install() {
+  drupal_install_schema('connector');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function connector_uninstall() {
+  drupal_uninstall_schema('connector');
+}
