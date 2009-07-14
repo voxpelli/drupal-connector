@@ -64,6 +64,25 @@ function connector_user($op, &$edit, &$user, $category = NULL) {
   }
 }
 
+/**
+ * Implementation of hook_realname().
+ */
+function connector_realname() {
+  return array(
+    'name'   => 'Connector',
+    'types'  => FALSE,
+    'fields' => FALSE,
+  );
+}
+
+/**
+ * Implementation of hook_realname_make().
+ */
+function connector_realname_make($account) {
+  $info = _connector_information_fetch($account);
+  return !empty($info['real name']) ? $info['real name'] : NULL;
+}
+
 function _connector_get_connectors($connector = NULL) {
   static $connectors;
 
@@ -176,7 +195,9 @@ function _connector_information_update($account) {
         'name'    => $info['real name'],
         'created' => time(),
       );
-      drupal_write_record('connector_name', $real_name);
+      if (!drupal_write_record('connector_name', $real_name, 'uid')) {
+        drupal_write_record('connector_name', $real_name);
+      }
     }
   }
 
