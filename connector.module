@@ -6,9 +6,8 @@
  * Connector module
  */
 
-//TODO: Take variable_get('user_email_verification', TRUE) into account
-//TODO: Add cron for updating information? Important for Facebook!
 //TODO: Enable user to remove itself from the site?
+//TODO: React on disabling and uninstalling of another connector module
 
 /**
  * Implementation of hook_theme().
@@ -26,31 +25,20 @@ function connector_theme() {
  * Implementation of hook_cron().
  */
 function connector_cron() {
-  $max_cache  = NULL;
-  $connectors = _connector_get_connectors();
+  //TODO: If we don't have time to refresh all data - just remove the ones we didn't have time to refresh?
 
-  foreach ($connectors as $connector) {
-    if (!empty($connector['max cache'])) {
-      if ($max_cache === NULL) {
-        $max_cache = $connector['max cache'];
-      }
-      else {
-        $max_cache = min($max_cache, $connector['max cache']);
-      }
-    }
-  }
+  $time = time() - 14400; //4 hours x 3600 seconds per hour = 14400 - that gives us 4 hours to refresh them.
 
-  if ($max_cache !== NULL) {
-    //TODO: Make this incremental - like the FeedAPI
-    $result = db_query("SELECT uid, type, created FROM {connector_info} WHERE created < %d ORDER BY uid", array(
-      ':created' => time() - $max_cache,
-    ));
+  while (_connector_cron_time()) {
+    $result = db_query_range("SELECT uid, type, max_life FROM {connector_info} WHERE max_life < %d ORDER BY max_life ASC", array(
+      ':time' => $time,
+    ), 0, 20);
 
     if ($info = db_fetch_object($result)) {
       $types = array();
       $uid   = $info->uid;
       do {
-        $types[$info->type] = $info->created;
+        $types[$info->type] = $info->max_life;
 
         $info = db_fetch_object($result);
 
@@ -59,7 +47,10 @@ function connector_cron() {
           $types = array();
           $uid   = $info->uid;
         }
-      } while ($info);
+      } while ($info && _connector_cron_time());
+    }
+    else {
+      break;
     }
   }
 }
@@ -146,6 +137,24 @@ function connector_realname_make($account) {
     return t('Hidden name');
   }
   return $info['real name'];
+}
+
+function _connector_cron_time() {
+  static $time_limit;
+
+  if (!$time_limit) {
+    $max = ini_get('max_execution_time');
+
+    if (!$max) {
+      $max = 240;
+    }
+
+    $time_limit = time() + 0.15 * $max;
+
+    // However, check for left time, maybe some other cron processing already occured
+    $time_limit = min($time_limit, variable_get('cron_semaphore', time()) + $max);
+  }
+  return max($time_limit - time(), 0);
 }
 
 function _connector_get_connectors($connector = NULL) {
@@ -297,8 +306,8 @@ function _connector_information_fetch($uid, $types = NULL, $update = TRUE) {
 }
 
 function _connector_information_update($uid, $types = NULL) {
-  //TODO: Configure which information we want fetched
-  //TODO: Configure fetching information from many sources
+  //TODO: Configure more types of information that we want fetched?
+  //TODO: Configure fetching information from many sources?
   if (is_object($uid)) {
     $uid = $uid->uid;
   }
@@ -309,29 +318,48 @@ function _connector_information_update($uid, $types = NULL) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
       $info = call_user_func($connector['information callback'], $connections[0]->cid, $types);
     }
-    if ((empty($types) || !empty($types['avatar'])) && variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
-      $avatar = call_user_func($connector['avatar callback'], $connections[0]->cid);
+    $info = (array) $info;
+    foreach ($types as $type => $value) {
+      if (!empty($value) && !array_key_exists($type, $info) && $type != 'avatar') {
+        $info[$type] = FALSE;
+      }
+    }
+    if (empty($types) || !empty($types['avatar'])) {
+      if (variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
+        $avatar = call_user_func($connector['avatar callback'], $connections[0]->cid);
+      }
+      else {
+        $avatar = FALSE;
+      }
+    }
+    if (!empty($connector['cache'])) {
+      $max_life = time() + $connector['cache'];
+    }
+    else {
+      $max_life = time() + 432000; //5 days x 24 hours per day x 3600 seconds per hour = 432000
     }
   }
 
   if (!empty($info)) {
-    $real_name = (object) array(
-      'uid'     => $uid,
-      'type'    => 'real name',
-      'value'   => empty($info['real name']) ? '' : $info['real name'], //TODO: Empty should be saved as NULL?
-      'created' => time(),
-    );
+    if (array_key_exists('real name', $info)) {
+      $real_name = (object) array(
+        'uid'      => $uid,
+        'type'     => 'real name',
+        'value'    => empty($info['real name']) ? '' : $info['real name'], //TODO: Empty should be saved as NULL?
+        'max_life' => $max_life,
+      );
 
-    $existing = _connector_information_fetch($uid, array('real name' => TRUE), FALSE);
+      $existing = _connector_information_fetch($uid, array('real name' => TRUE), FALSE);
 
-    if ($existing['real name'] !== FALSE) {
-      if ($existing['real name'] == $info['real name']) {
-        unset($real_name->value);
+      if ($existing['real name'] !== FALSE) {
+        if ($existing['real name'] == $info['real name']) {
+          unset($real_name->value);
+        }
+        drupal_write_record('connector_info', $real_name, array('uid', 'type'));
       }
-      drupal_write_record('connector_info', $real_name, array('uid', 'type'));
-    }
-    else {
-      drupal_write_record('connector_info', $real_name);
+      else {
+        drupal_write_record('connector_info', $real_name);
+      }
     }
   }
 
@@ -375,9 +403,9 @@ function _connector_information_update($uid, $types = NULL) {
             user_save($account, array('picture' => $file->filepath));
 
             $avatar_record = (object) array(
-              'uid'     => $uid,
-              'type'    => 'avatar',
-              'created' => time(),
+              'uid'      => $uid,
+              'type'     => 'avatar',
+              'max_life' => $max_life,
             );
             if (db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(':uid' => $uid)))) {
               drupal_write_record('connector_info', $avatar_record, array('uid', 'type'));

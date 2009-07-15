@@ -1,0 +1,39 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Requirements for the Facebook Connector module
+ */
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function fbconnector_uninstall() {
+  variable_del('fbconnector_api_key');
+  variable_del('fbconnector_application_secret');
+}
+
+/**
+ * Implementation of hook_requirements().
+ */
+function fbconnector_requirements($phase) {
+  $requirements = array();
+
+  // Ensure translations don't break at install time
+  $t = get_t();
+
+  // Report Drupal version
+  if ($phase == 'runtime') {
+    if (!variable_get('fbconnector_api_key', NULL) || !variable_get('fbconnector_application_secret', NULL)) {
+      $requirements['fbconnector_api_credentials'] = array(
+        'title'       => $t('Facebook Connector API'),
+        'value'       => $api ? $t('Available') : $t('Unavailable'),
+        'description' => $t("We need your Facebook Application's API-key and Application Secret for Facebook Connector to work - enter them on the !settings_page.", array('!settings_page' => l($t('settings page'), 'admin/settings/fbconnector'))),
+        'severity'    => $api ? REQUIREMENT_OK : REQUIREMENT_ERROR,
+      );
+    }
+  }
+
+  return $requirements;
+}

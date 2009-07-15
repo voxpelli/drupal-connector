@@ -12,14 +12,16 @@
 function fbconnector_connector() {
   $items = array();
 
-  $items['fbconnector'] = array(
-    'button callback'      => '_fbconnector_button',
-    'id callback'          => '_fbconnector_id',
-    'logout callback'      => '_fbconnector_logout',
-    'information callback' => '_fbconnector_info',
-    'avatar callback'      => '_fbconnector_avatar',
-    'max cache'            => 72000, //20 hours x 3600 seconds per hour
-  );
+  if (variable_get('fbconnector_api_key', NULL) && variable_get('fbconnector_application_secret', NULL)) {
+    $items['fbconnector'] = array(
+      'button callback'      => '_fbconnector_button',
+      'id callback'          => '_fbconnector_id',
+      'logout callback'      => '_fbconnector_logout',
+      'information callback' => '_fbconnector_info',
+      'avatar callback'      => '_fbconnector_avatar',
+      'cache'                => 86400, //24 hours x 3600 seconds per hour
+    );
+  }
 
   return $items;
 }
@@ -38,20 +40,56 @@ function fbconnector_theme() {
 }
 
 /**
+ * Implementation of hook_menu().
+ */
+function fbconnector_menu() {
+  $items['admin/settings/fbconnector'] = array(
+    'title'            => 'Facebook Connector',
+    'description'      => "Configure the API credentials Facebook Connector needs to talk with Facebook.",
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('fbconnector_settings_form'),
+    'access arguments' => array('administer site configuration'),
+    'file'             => 'fbconnector.admin.inc',
+  );
+
+  $items['admin/settings/fbconnector/settings'] = array(
+    'title'  => 'Settings',
+    'type'   => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+
+  $items['admin/settings/fbconnector/setup'] = array(
+    'title'            => 'Auto-configure',
+    'type'             => MENU_LOCAL_TASK,
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('fbconnector_setup_form'),
+    'access arguments' => array('administer site configuration'),
+    'weight'           => 0,
+    'file'             => 'fbconnector.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
  * Implementation of hook_init().
  */
 function fbconnector_init() {
   global $user;
 
   if ($user->uid == 0) {
-    if (_fbconnector_client()->get_loggedin_user()) {
-      if (_connector_log_in('fbconnector')) {
-        $info = _connector_information_fetch($user->uid, array('real name' => TRUE));
-        if (empty($info['real name'])) {
-          _connector_information_update($user->uid, array('real name' => TRUE));
+    try {
+      if (_fbconnector_client()->get_loggedin_user()) {
+        if (_connector_log_in('fbconnector')) {
+          $info = _connector_information_fetch($user->uid, array('real name' => TRUE));
+          if (empty($info['real name'])) {
+            _connector_information_update($user->uid, array('real name' => TRUE));
+          }
+          drupal_goto();
         }
-        drupal_goto();
       }
+    } catch (Exception $e) {
+      watchdog('fbconnector', 'Caught Facebook Client exception: @exception',  array('@exception' => $e->getMessage()), WATCHDOG_WARNING);
     }
   }
 }
@@ -64,13 +102,12 @@ function fbconnector_footer() {
 }
 
 function _fbconnector_client() {
-  //TODO: Make API key and secret customizable
   static $fb = NULL;
   if (!$fb instanceof Facebook) {
     if (!class_exists('Facebook')) {
       include_once(drupal_get_path('module', 'fbconnector') . '/facebook-platform/facebook.php');
     }
-    $fb = new Facebook('034e7f8fdbcd7af88b4906828c58a598', '3f1bf87059c2eb3eefaa2ef0825d0d82');
+    $fb = new Facebook(variable_get('fbconnector_api_key', NULL), variable_get('fbconnector_application_secret', NULL));
   }
   return $fb;
 }
@@ -122,9 +159,8 @@ function _fbconnector_id() {
  * Connector button callback
  */
 function _fbconnector_button() {
-  //TODO: Make API key customizable
   drupal_add_js(array(
-    'fbconnector_api_key'     => '034e7f8fdbcd7af88b4906828c58a598',
+    'fbconnector_api_key'     => variable_get('fbconnector_api_key', NULL),
     'fbconnector_xd_receiver' => check_plain(url(drupal_get_path('module', 'fbconnector') . '/xd_receiver.htm')),
   ), 'setting');
 

@@ -35,18 +35,18 @@ function connector_schema() {
         'default'     => '',
         'description' => 'The value of the property',
       ),
-      'created' => array(
+      'max_life' => array(
         'type'        => 'int',
         'unsigned'    => TRUE,
-        'not null'    => TRUE,
+        'not null'    => FALSE,
         'default'     => 0,
-        'description' => 'The Unix timestamp when the name was fetched',
+        'description' => 'The Unix timestamp when info latest needs to be refreshed',
       ),
     ),
     'primary key' => array('uid', 'type'),
     'indexes' => array(
-      'to_update' => array('type', 'created'),
-      'created'   => array('created'),
+      'refresh' => array('type', 'max_life'),
+      'max_life' => array('max_life'),
     ),
   );
 
@@ -86,8 +86,20 @@ function connector_requirements($phase) {
         'severity'    => REQUIREMENT_WARNING,
       );
     }
-  }
 
+    $count = db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE max_life < %d", array(
+      ':time' => time(),
+    )));
+    $old = ($count > 0);
+    $requirements['connector_old_cache'] = array(
+      'title'       => $t('Connector user cache'),
+      'value'       => $old ? $t('Too old') : $t('Up to date'),
+      'severity'    => $old ? REQUIREMENT_WARNING : REQUIREMENT_OK,
+    );
+    if ($old) {
+      $requirements['connector_old_cache']['description'] = $t("The content of the Connector module's user information cache is too old - this might violate the terms of the third party we imported the information from. Fix this by running the cron job more often.");
+    }
+  }
 
   return $requirements;
 }
