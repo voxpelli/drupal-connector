@@ -18,6 +18,7 @@ function fbconnector_connector() {
     'logout callback'      => '_fbconnector_logout',
     'information callback' => '_fbconnector_info',
     'avatar callback'      => '_fbconnector_avatar',
+    'max cache'            => 72000, //20 hours x 3600 seconds per hour
   );
 
   return $items;
@@ -45,6 +46,10 @@ function fbconnector_init() {
   if ($user->uid == 0) {
     if (_fbconnector_client()->get_loggedin_user()) {
       if (_connector_log_in('fbconnector')) {
+        $info = _connector_information_fetch($user->uid, array('real name' => TRUE));
+        if (empty($info['real name'])) {
+          _connector_information_update($user->uid, array('real name' => TRUE));
+        }
         drupal_goto();
       }
     }
@@ -77,24 +82,20 @@ function _fbconnector_avatar($cid) {
   $result = _fbconnector_client()->api_client->users_getInfo($cid, array(
     'pic_square_with_logo',
   ));
-
-  if (!empty($result)) {
-    return $result[0]['pic_square_with_logo'];
-  }
+  return empty($result) ? FALSE : $result[0]['pic_square_with_logo'];
 }
 
 /**
  * Information callback
  */
-function _fbconnector_info($cid) {
+function _fbconnector_info($cid, $types = NULL) {
   $info = array();
 
-  $result = _fbconnector_client()->api_client->users_getInfo($cid, array(
-    'name',
-  ));
-
-  if (!empty($result)) {
-    $info['real name'] = $result[0]['name'];
+  if (empty($types) || !empty($types['real name'])) {
+    $result = _fbconnector_client()->api_client->users_getInfo($cid, array(
+      'name',
+    ));
+    $info['real name'] = empty($result) ? FALSE : $result[0]['name'];
   }
 
   return $info;
