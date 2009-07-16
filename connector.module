@@ -6,8 +6,9 @@
  * Connector module
  */
 
-//TODO: Enable user to remove itself from the site?
+//TODO: Enable user to remove itself/it's connection from the site?
 //TODO: React on disabling and uninstalling of another connector module
+//TODO: Show indication of the connection when logged in?
 
 /**
  * Implementation of hook_theme().
