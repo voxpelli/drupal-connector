@@ -140,6 +140,16 @@ function connector_realname_make($account) {
   return $info['real name'];
 }
 
+/**
+ * Implementation of hook_views_api().
+ */
+function connector_views_api() {
+  return array(
+    'api'  => 2,
+    'path' => drupal_get_path('module', 'connector') .'/includes',
+  );
+}
+
 function _connector_cron_time() {
   static $time_limit;
 
@@ -320,7 +330,7 @@ function _connector_information_update($uid, $types = NULL) {
       $info = call_user_func($connector['information callback'], $connections[0]->cid, $types);
     }
     $info = (array) $info;
-    foreach ($types as $type => $value) {
+    foreach ((array) $types as $type => $value) {
       if (!empty($value) && !array_key_exists($type, $info) && $type != 'avatar') {
         $info[$type] = FALSE;
       }
