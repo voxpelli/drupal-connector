@@ -36,19 +36,9 @@ function connector_cron() {
     ), 0, 20);
 
     if ($info = db_fetch_object($result)) {
-      $types = array();
-      $uid   = $info->uid;
       do {
-        $types[$info->type] = $info->max_life;
-
-        $info = db_fetch_object($result);
-
-        if ($info->uid != $uid || !$info) {
-          _connector_information_update($uid, $types);
-          $types = array();
-          $uid   = $info->uid;
-        }
-      } while ($info && _connector_cron_time());
+        _connector_information_update($info->uid, array($info->type => $info->max_life));
+      } while ($info = db_fetch_object($result));
     }
     else {
       break;
@@ -374,67 +364,65 @@ function _connector_information_update($uid, $types = NULL) {
     }
   }
 
-  if (!empty($avatar)) {
-    $result = drupal_http_request($avatar);
-    if ($result->code != 200) {
-      watchdog('connector', 'Failed importing avatar for user @uid, code : @code',
-      array('@uid' => $uid, '@code' => $result->code));
-    }
-    else {
-      //Copied from file_save_data - needs to write the file before validating it
-      $temp = file_directory_temp();
-      // On Windows, tempnam() requires an absolute path, so we use realpath().
-      $tmp_file = tempnam(realpath($temp), 'file');
-      if (!$fp = fopen($tmp_file, 'wb')) {
-        drupal_set_message(t('The file could not be created.'), 'error');
-      }
-      else {
-        fwrite($fp, $result->data);
-        fclose($fp);
-
-        $file = new stdClass();
-        $file->filename = file_munge_filename(trim(basename($tmp_file), '.'), 'jpg jpeg gif png', FALSE);
-        $file->filepath = $tmp_file;
-        $file->filemime = file_get_mimetype($tmp_file);
-        $file->filesize = filesize($tmp_file);
-
-        $errors = array();
-        $errors += file_validate_is_image($file);
-        $errors += file_validate_image_resolution($file, variable_get('user_picture_dimensions', '85x85'));
-        $errors += file_validate_size($file, variable_get('user_picture_file_size', '30') * 1024);
-
-        if (empty($errors)) {
-          $info = image_get_info($file->filepath);
-          $destination = file_create_path(variable_get('user_picture_path', 'pictures') . '/picture-' . $uid . '.' . $info['extension']);
-          if (file_copy($file, $destination, FILE_EXISTS_REPLACE)) {
-            $account = user_load($uid);
-            if (isset($account->picture) && $account->picture != $destination && file_exists($account->picture)) {
-              file_delete($account->picture);
-            }
-            user_save($account, array('picture' => $file->filepath));
-
-            $avatar_record = (object) array(
-              'uid'      => $uid,
-              'type'     => 'avatar',
-              'max_life' => $max_life,
-            );
-            if (db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(':uid' => $uid)))) {
-              drupal_write_record('connector_info', $avatar_record, array('uid', 'type'));
-            }
-            else {
-              drupal_write_record('connector_info', $avatar_record);
-            }
-          }
-        }
-
-        file_delete($tmp_file);
-      }
-    }
-  }
-  else if ($avatar === FALSE) {
+  if (isset($avatar)) {
     $account = user_load($uid);
+
     if (isset($account->picture) && $account->picture != $destination && file_exists($account->picture)) {
       file_delete($account->picture);
+    }
+
+    $avatar_record = (object) array(
+      'uid'      => $uid,
+      'type'     => 'avatar',
+      'max_life' => $max_life,
+    );
+    if (db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(':uid' => $uid)))) {
+      drupal_write_record('connector_info', $avatar_record, array('uid', 'type'));
+    }
+    else {
+      drupal_write_record('connector_info', $avatar_record);
+    }
+
+    if (!empty($avatar)) {
+      $result = drupal_http_request($avatar);
+      if ($result->code != 200) {
+        watchdog('connector', 'Failed importing avatar for user @uid, code : @code',
+        array('@uid' => $uid, '@code' => $result->code));
+      }
+      else {
+        //Copied from file_save_data - needs to write the file before validating it
+        $temp = file_directory_temp();
+        // On Windows, tempnam() requires an absolute path, so we use realpath().
+        $tmp_file = tempnam(realpath($temp), 'file');
+        if (!$fp = fopen($tmp_file, 'wb')) {
+          drupal_set_message(t('The file could not be created.'), 'error');
+        }
+        else {
+          fwrite($fp, $result->data);
+          fclose($fp);
+
+          $file = new stdClass();
+          $file->filename = file_munge_filename(trim(basename($tmp_file), '.'), 'jpg jpeg gif png', FALSE);
+          $file->filepath = $tmp_file;
+          $file->filemime = file_get_mimetype($tmp_file);
+          $file->filesize = filesize($tmp_file);
+
+          $errors = array();
+          $errors += file_validate_is_image($file);
+          $errors += file_validate_image_resolution($file, variable_get('user_picture_dimensions', '85x85'));
+          $errors += file_validate_size($file, variable_get('user_picture_file_size', '30') * 1024);
+
+          if (empty($errors)) {
+            $info = image_get_info($file->filepath);
+            $destination = file_create_path(variable_get('user_picture_path', 'pictures') . '/picture-' . $uid . '.' . $info['extension']);
+            if (file_copy($file, $destination, FILE_EXISTS_REPLACE)) {
+              user_save($account, array('picture' => $file->filepath));
+            }
+          }
+
+          file_delete($tmp_file);
+        }
+      }
     }
   }
 }
