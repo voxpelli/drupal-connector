@@ -414,8 +414,11 @@ function _connector_information_update($uid, $types = NULL) {
 
           if (empty($errors)) {
             $info = image_get_info($file->filepath);
-            $destination = file_create_path(variable_get('user_picture_path', 'pictures') . '/picture-' . $uid . '.' . $info['extension']);
-            if (file_copy($file, $destination, FILE_EXISTS_REPLACE)) {
+
+            $destination = file_create_path(variable_get('user_picture_path', 'pictures'));
+            file_check_directory($destination, FILE_CREATE_DIRECTORY);
+
+            if (file_copy($file, $destination . '/picture-' . $uid . '.' . $info['extension'], FILE_EXISTS_REPLACE)) {
               user_save($account, array('picture' => $file->filepath));
             }
           }
