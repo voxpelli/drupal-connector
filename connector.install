@@ -1,0 +1,105 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Database and updating for the connector module
+ */
+
+/**
+ * Implementation of hook_schema().
+ */
+function connector_schema() {
+  $schema = array();
+
+  $schema['connector_info'] = array(
+    'fields' => array(
+      'uid' => array(
+        'type'        => 'int',
+        'unsigned'    => TRUE,
+        'not null'    => TRUE,
+        'default'     => 0,
+        'description' => 'The id of the user',
+      ),
+      'type' => array(
+        'type'        => 'varchar',
+        'length'      => 80,
+        'not null'    => TRUE,
+        'default'     => '',
+        'description' => "The type of property - eg. 'real name'",
+      ),
+      'value' => array(
+        'type'        => 'varchar',
+        'length'      => 80,
+        'not null'    => FALSE,
+        'default'     => '',
+        'description' => 'The value of the property',
+      ),
+      'max_life' => array(
+        'type'        => 'int',
+        'unsigned'    => TRUE,
+        'not null'    => FALSE,
+        'default'     => 0,
+        'description' => 'The Unix timestamp when info latest needs to be refreshed',
+      ),
+    ),
+    'primary key' => array('uid', 'type'),
+    'indexes' => array(
+      'refresh' => array('type', 'max_life'),
+      'max_life' => array('max_life'),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implementation of hook_install().
+ */
+function connector_install() {
+  drupal_install_schema('connector');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function connector_uninstall() {
+  drupal_uninstall_schema('connector');
+}
+
+/**
+ * Implementation of hook_requirements().
+ */
+function connector_requirements($phase) {
+  $requirements = array();
+
+  // Ensure translations don't break at install time
+  $t = get_t();
+
+  // Report Drupal version
+  if ($phase == 'runtime') {
+    if (variable_get('user_email_verification', TRUE)) {
+      $requirements['user_email_verification'] = array(
+        'title'       => $t('User E-mail Address'),
+        'value'       => $t('Required'),
+        'description' => $t("A user registered through a connector doesn't have an e-mail address - it is recommended to !remove the requirement.", array('!remove' => l($t('remove'), 'admin/user/settings'))),
+        'severity'    => REQUIREMENT_WARNING,
+      );
+    }
+
+    $count = db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE max_life < %d", array(
+      ':time' => time(),
+    )));
+    $old = ($count > 0);
+    $requirements['connector_old_cache'] = array(
+      'title'       => $t('Connector user cache'),
+      'value'       => $old ? $t('Too old') : $t('Up to date'),
+      'severity'    => $old ? REQUIREMENT_WARNING : REQUIREMENT_OK,
+    );
+    if ($old) {
+      $requirements['connector_old_cache']['description'] = $t("The content of the Connector module's user information cache is too old - this might violate the terms of the third party we imported the information from. Fix this by running the cron job more often.");
+    }
+  }
+
+  return $requirements;
+}

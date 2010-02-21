@@ -1,0 +1,443 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Connector module
+ */
+
+//TODO: Enable user to remove itself/it's connection from the site?
+//TODO: React on disabling and uninstalling of another connector module
+//TODO: Show indication of the connection when logged in?
+
+/**
+ * Implementation of hook_theme().
+ */
+function connector_theme() {
+  return array(
+    'connector_one_click_block' => array(
+      'template' => 'connector-one-click-block',
+      'arguments' => array('buttons' => array()),
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_cron().
+ */
+function connector_cron() {
+  //TODO: If we don't have time to refresh all data - just remove the ones we didn't have time to refresh?
+
+  $time = time() - 14400; //4 hours x 3600 seconds per hour = 14400 - that gives us 4 hours to refresh them.
+
+  while (_connector_cron_time()) {
+    $result = db_query_range("SELECT uid, type, max_life FROM {connector_info} WHERE max_life < %d ORDER BY max_life ASC", array(
+      ':time' => $time,
+    ), 0, 20);
+
+    if ($info = db_fetch_object($result)) {
+      do {
+        _connector_information_update($info->uid, array($info->type => $info->max_life));
+      } while ($info = db_fetch_object($result));
+    }
+    else {
+      break;
+    }
+  }
+}
+
+/**
+ * Implementation of hook_block().
+ */
+function connector_block($op = 'list', $delta = 0) {
+  global $user;
+
+  if ($op == 'list') {
+    $block['one_click_block']['info'] = t('Sign in with other site');
+    return $block;
+  }
+  elseif ($op == 'view') {
+    switch ($delta) {
+      case 'one_click_block':
+        if (!$user->uid) {
+          return array(
+            'content' => theme('connector_one_click_block'),
+          );
+        }
+        break;
+    }
+  }
+}
+
+/**
+ * Implementation of hook_user().
+ */
+function connector_user($op, &$edit, &$user, $category = NULL) {
+  switch ($op) {
+    case 'delete':
+      $connectors  = _connector_get_connectors();
+      $connections = _connector_get_user_connections($user);
+      foreach ($connections as $connection) {
+        if (array_key_exists($connection->connector, $connectors)) {
+          $connector = $connectors[$connection->connector];
+          if (isset($connector['delete callback']) && is_callable($connector['delete callback'])) {
+            call_user_func($connector['delete callback'], $connection->cid);
+          }
+        }
+      }
+      db_query('DELETE FROM {connector_info} WHERE uid = %d', array(
+        ':uid' => $user->uid,
+      ));
+      break;
+    case 'logout':
+      $connectors  = _connector_get_connectors();
+      $connections = _connector_get_user_connections($user);
+      foreach ($connections as $connection) {
+        if (array_key_exists($connection->connector, $connectors)) {
+          $connector = $connectors[$connection->connector];
+          if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
+            call_user_func($connector['logout callback'], $connection->cid);
+          }
+        }
+      }
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_realname().
+ */
+function connector_realname() {
+  return array(
+    'name'   => 'Connector',
+    'types'  => FALSE,
+    'fields' => FALSE,
+    'cache'  => FALSE,
+  );
+}
+
+/**
+ * Implementation of hook_realname_make().
+ */
+function connector_realname_make($account) {
+  $info = _connector_information_fetch($account, array('real name' => TRUE));
+  if ($info['real name'] === FALSE) {
+    return NULL;
+  }
+  else if (empty($info['real name'])) {
+    return t('Hidden name');
+  }
+  return $info['real name'];
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+function connector_views_api() {
+  return array(
+    'api'  => 2,
+    'path' => drupal_get_path('module', 'connector') .'/includes',
+  );
+}
+
+function _connector_cron_time() {
+  static $time_limit;
+
+  if (!$time_limit) {
+    $max = ini_get('max_execution_time');
+
+    if (!$max) {
+      $max = 240;
+    }
+
+    $time_limit = time() + 0.15 * $max;
+
+    // However, check for left time, maybe some other cron processing already occured
+    $time_limit = min($time_limit, variable_get('cron_semaphore', time()) + $max);
+  }
+  return max($time_limit - time(), 0);
+}
+
+function _connector_get_connectors($connector = NULL) {
+  static $connectors;
+
+  if (!isset($connectors)) {
+    $connectors = (array) module_invoke_all('connector');
+    drupal_alter('connector', $connectors);
+  }
+
+  if ($connector) {
+    if (array_key_exists($connector, $connectors)) {
+      return $connectors[$connector];
+    }
+    else {
+      return FALSE;
+    }
+  }
+
+  return $connectors;
+}
+
+function _connector_get_user_connections($uid) {
+  $connectors = array();
+
+  if (is_object($uid)) {
+    $uid = $uid->uid;
+  }
+
+  $result = db_query("SELECT authname FROM {authmap} WHERE module = 'connector' AND uid = %d", $uid);
+  while ($row = db_fetch_object($result)) {
+    $row = explode('__', $row->authname, 2);
+    if (count($row) === 2) {
+      $connectors[] = (object) array(
+        'connector' => $row[0],
+        'cid' => $row[1],
+      );
+    }
+  }
+
+  return $connectors;
+}
+
+function _connector_log_in($connector_name) {
+  global $user;
+
+  if (user_is_logged_in()) {
+    return FALSE;
+  }
+
+  $connector = _connector_get_connectors($connector_name);
+  if (!$connector) {
+    return FALSE;
+  }
+
+  //Fetch connector ID
+  if (isset($connector['id callback']) && is_callable($connector['id callback'])) {
+    $cid = call_user_func($connector['id callback']);
+  }
+
+  if ($cid) {
+    $username = $connector_name . '__' . $cid;
+    $account = user_external_load($username);
+    if (!$account) {
+      if (variable_get('user_register', 1)) {
+        // Mostly copied from user_external_login_register - because it doesn't check user_register
+        // Register this new user.
+        $userinfo = array(
+          'name' => $username,
+          'pass' => user_password(),
+          'init' => $username,
+          'status' => variable_get('user_register', 1) == 1,
+          "authname_connector" => $username,
+          'access' => time()
+        );
+        $new_account = user_save('', $userinfo);
+        // Terminate if an error occured during user_save().
+        if (!$new_account) {
+          drupal_set_message(t("Error saving user account."), 'error');
+        }
+        else {
+          _connector_information_update($new_account);
+          if ($new_account->status) {
+            $user = $new_account;
+            return TRUE;
+          }
+          else {
+            drupal_set_message(t('Your account is currently pending approval by the site administrator.'), 'warning');
+            if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
+              call_user_func($connector['logout callback'], $connection->cid);
+            }
+          }
+          watchdog('user', 'New external user: %name using module %module.', array('%name' => $username, '%module' => 'connector'), WATCHDOG_NOTICE, l(t('edit'), 'user/'. $new_account->uid .'/edit'));
+        }
+      }
+      else {
+        drupal_set_message(t('Only site administrators can create new user accounts.'), 'error');
+        if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
+          call_user_func($connector['logout callback'], $connection->cid);
+        }
+      }
+    }
+    else {
+      //Log in user
+      if ($account->status) {
+        $result = user_external_login($account);
+        if ($result) {
+          return TRUE;
+        }
+      }
+      else {
+        drupal_set_message(t('Your account is currently pending approval by the site administrator.'), 'warning');
+        if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
+          call_user_func($connector['logout callback'], $connection->cid);
+        }
+      }
+    }
+  }
+
+  return FALSE;
+}
+
+function _connector_information_fetch($uid, $types = NULL, $update = TRUE) {
+  //TODO: Use $types if more info is added for a user
+  static $cache;
+
+  if (is_object($uid)) {
+    $uid = $uid->uid;
+  }
+
+  if (empty($cache)) {
+    $cache = array();
+  }
+
+  if (!isset($cache[$uid])) {
+    $result = db_result(db_query("SELECT value FROM {connector_info} WHERE uid = %d AND type = 'real name'", array(
+      ':uid' => $uid,
+    )));
+    if ($result === FALSE && $update) {
+      _connector_information_update($uid, array('real name' => TRUE));
+      $result = db_result(db_query("SELECT value FROM {connector_info} WHERE uid = %d AND type = 'real name'", array(
+        ':uid' => $uid,
+      )));
+    }
+    $cache[$uid] = array('real name' => $result);
+  }
+
+  return $cache[$uid];
+}
+
+function _connector_information_update($uid, $types = NULL) {
+  //TODO: Configure more types of information that we want fetched?
+  //TODO: Configure fetching information from many sources?
+  if (is_object($uid)) {
+    $uid = $uid->uid;
+  }
+
+  $connections = _connector_get_user_connections($uid);
+  $connector   = _connector_get_connectors($connections[0]->connector);
+  if ($connector) {
+    if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
+      $info = call_user_func($connector['information callback'], $connections[0]->cid, $types);
+    }
+    $info = (array) $info;
+    foreach ((array) $types as $type => $value) {
+      if (!empty($value) && !array_key_exists($type, $info) && $type != 'avatar') {
+        $info[$type] = FALSE;
+      }
+    }
+    if (empty($types) || !empty($types['avatar'])) {
+      if (variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
+        $avatar = call_user_func($connector['avatar callback'], $connections[0]->cid);
+      }
+      else {
+        $avatar = FALSE;
+      }
+    }
+    if (!empty($connector['cache'])) {
+      $max_life = time() + $connector['cache'];
+    }
+    else {
+      $max_life = time() + 432000; //5 days x 24 hours per day x 3600 seconds per hour = 432000
+    }
+  }
+
+  if (!empty($info)) {
+    if (array_key_exists('real name', $info)) {
+      $real_name = (object) array(
+        'uid'      => $uid,
+        'type'     => 'real name',
+        'value'    => empty($info['real name']) ? '' : $info['real name'], //TODO: Empty should be saved as NULL?
+        'max_life' => $max_life,
+      );
+
+      $existing = _connector_information_fetch($uid, array('real name' => TRUE), FALSE);
+
+      if ($existing['real name'] !== FALSE) {
+        if ($existing['real name'] == $info['real name']) {
+          unset($real_name->value);
+        }
+        drupal_write_record('connector_info', $real_name, array('uid', 'type'));
+      }
+      else {
+        drupal_write_record('connector_info', $real_name);
+      }
+    }
+  }
+
+  if (isset($avatar)) {
+    $account = user_load($uid);
+
+    if (isset($account->picture) && $account->picture != $destination && file_exists($account->picture)) {
+      file_delete($account->picture);
+    }
+
+    $avatar_record = (object) array(
+      'uid'      => $uid,
+      'type'     => 'avatar',
+      'max_life' => $max_life,
+    );
+    if (db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(':uid' => $uid)))) {
+      drupal_write_record('connector_info', $avatar_record, array('uid', 'type'));
+    }
+    else {
+      drupal_write_record('connector_info', $avatar_record);
+    }
+
+    if (!empty($avatar)) {
+      $result = drupal_http_request($avatar);
+      if ($result->code != 200) {
+        watchdog('connector', 'Failed importing avatar for user @uid, code : @code',
+        array('@uid' => $uid, '@code' => $result->code));
+      }
+      else {
+        //Copied from file_save_data - needs to write the file before validating it
+        $temp = file_directory_temp();
+        // On Windows, tempnam() requires an absolute path, so we use realpath().
+        $tmp_file = tempnam(realpath($temp), 'file');
+        if (!$fp = fopen($tmp_file, 'wb')) {
+          drupal_set_message(t('The file could not be created.'), 'error');
+        }
+        else {
+          fwrite($fp, $result->data);
+          fclose($fp);
+
+          $file = new stdClass();
+          $file->filename = file_munge_filename(trim(basename($tmp_file), '.'), 'jpg jpeg gif png', FALSE);
+          $file->filepath = $tmp_file;
+          $file->filemime = file_get_mimetype($tmp_file);
+          $file->filesize = filesize($tmp_file);
+
+          $errors = array();
+          $errors += file_validate_is_image($file);
+          $errors += file_validate_image_resolution($file, variable_get('user_picture_dimensions', '85x85'));
+          $errors += file_validate_size($file, variable_get('user_picture_file_size', '30') * 1024);
+
+          if (empty($errors)) {
+            $info = image_get_info($file->filepath);
+
+            $destination = file_create_path(variable_get('user_picture_path', 'pictures'));
+            file_check_directory($destination, FILE_CREATE_DIRECTORY);
+
+            if (file_copy($file, $destination . '/picture-' . $uid . '.' . $info['extension'], FILE_EXISTS_REPLACE)) {
+              user_save($account, array('picture' => $file->filepath));
+            }
+          }
+
+          file_delete($tmp_file);
+        }
+      }
+    }
+  }
+}
+
+function template_preprocess_connector_one_click_block(&$vars) {
+  if (empty($vars['buttons'])) {
+    $vars['buttons'] = array();
+    $connectors = _connector_get_connectors();
+    foreach ($connectors as $key => $connector) {
+      if (isset($connector['button callback']) && is_callable($connector['button callback'])) {
+        $vars['buttons'][] = call_user_func($connector['button callback']);
+      }
+    }
+  }
+}
