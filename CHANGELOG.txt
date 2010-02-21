@@ -1,0 +1,5 @@
+// $Id$
+
+Connector 6.x-0.x, xxxx-xx-xx
+------------------------------
+by voxpelli: Initial commit to Drupal.org
