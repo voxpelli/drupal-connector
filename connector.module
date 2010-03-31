@@ -278,7 +278,7 @@ function _connector_log_in($connector_name) {
   return FALSE;
 }
 
-function _connector_information_fetch($uid, $types = NULL, $update = TRUE) {
+function _connector_information_fetch($uid, $types = NULL, $update = TRUE, $reset = FALSE) {
   //TODO: Use $types if more info is added for a user
   static $cache;
 
@@ -290,7 +290,11 @@ function _connector_information_fetch($uid, $types = NULL, $update = TRUE) {
     $cache = array();
   }
 
-  if (!isset($cache[$uid])) {
+  if ($reset) {
+    unset($cache[$uid]);
+    return;
+  }
+  elseif (!isset($cache[$uid])) {
     $result = db_result(db_query("SELECT value FROM {connector_info} WHERE uid = %d AND type = 'real name'", array(
       ':uid' => $uid,
     )));
@@ -361,6 +365,8 @@ function _connector_information_update($uid, $types = NULL) {
       else {
         drupal_write_record('connector_info', $real_name);
       }
+
+      _connector_information_fetch($uid, NULL, FALSE, TRUE);
     }
   }
 
