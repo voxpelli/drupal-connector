@@ -1,8 +1,11 @@
 <?php
 // $Id$
+
 /**
+ * @file
  * Field handler to provide simple renderer that allows using a themed user link
  */
+
 class connector_handler_field_facebook_name extends views_handler_field_user_name {
   function init(&$view, &$data) {
     parent::init($view, $data);

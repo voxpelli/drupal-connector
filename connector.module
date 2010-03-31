@@ -124,7 +124,7 @@ function connector_realname_make($account) {
   if ($info['real name'] === FALSE) {
     return NULL;
   }
-  else if (empty($info['real name'])) {
+  elseif (empty($info['real name'])) {
     return t('Hidden name');
   }
   return $info['real name'];
