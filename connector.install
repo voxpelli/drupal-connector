@@ -82,7 +82,7 @@ function connector_requirements($phase) {
       $requirements['user_email_verification'] = array(
         'title'       => $t('User E-mail Address'),
         'value'       => $t('Required'),
-        'description' => $t("A user registered through a connector doesn't have an e-mail address - it is recommended to !remove the requirement.", array('!remove' => l($t('remove'), 'admin/user/settings'))),
+        'description' => $t("Since a user that's registered through a connector doesn't have an e-mail address it is recommended to !remove the requirement.", array('!remove' => l($t('remove'), 'admin/user/settings'))),
         'severity'    => REQUIREMENT_WARNING,
       );
     }
