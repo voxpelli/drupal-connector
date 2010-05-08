@@ -9,6 +9,7 @@
 //TODO: Enable user to remove itself/it's connection from the site?
 //TODO: React on disabling and uninstalling of another connector module
 //TODO: Show indication of the connection when logged in?
+//TODO: Create admin page where all subconnectors can be gathered? Or a category?
 
 /**
  * Implementation of hook_theme().
@@ -441,6 +442,9 @@ function template_preprocess_connector_one_click_block(&$vars) {
     $vars['buttons'] = array();
     $connectors = _connector_get_connectors();
     foreach ($connectors as $key => $connector) {
+      //TODO: Make it possible to define buttons in a simpler way - like just creating
+      //      a theme function or by just supplying a url to where the button should
+      //      point and perhaps an image?
       if (isset($connector['button callback']) && is_callable($connector['button callback'])) {
         $vars['buttons'][] = call_user_func($connector['button callback']);
       }
