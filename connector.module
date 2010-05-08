@@ -199,7 +199,7 @@ function _connector_get_user_connections($uid) {
   return $connectors;
 }
 
-function _connector_log_in($connector_name) {
+function _connector_log_in($connector_name, $cid = NULL) {
   global $user;
 
   if (user_is_logged_in()) {
@@ -212,11 +212,11 @@ function _connector_log_in($connector_name) {
   }
 
   //Fetch connector ID
-  if (isset($connector['id callback']) && is_callable($connector['id callback'])) {
+  if ($cid === NULL && isset($connector['id callback']) && is_callable($connector['id callback'])) {
     $cid = call_user_func($connector['id callback']);
   }
 
-  if ($cid) {
+  if ($cid !== NULL) {
     $username = $connector_name . '__' . $cid;
     $account = user_external_load($username);
     if (!$account) {
