@@ -54,7 +54,7 @@ function connector_block($op = 'list', $delta = 0) {
   global $user;
 
   if ($op == 'list') {
-    $block['one_click_block']['info'] = t('Sign in with other site');
+    $block['one_click_block']['info'] = t('Connector');
     return $block;
   }
   elseif ($op == 'view') {
@@ -319,10 +319,11 @@ function _connector_information_update($uid, $types = NULL) {
   }
 
   $connections = _connector_get_user_connections($uid);
+  //TODO: What if there are no connections? Will it fail then?
   $connector   = _connector_get_connectors($connections[0]->connector);
   if ($connector) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
-      $info = call_user_func($connector['information callback'], $connections[0]->cid, $types);
+      $info = call_user_func($connector['information callback'], $connections[0]->cid, $types, $uid);
     }
     $info = (array) $info;
     foreach ((array) $types as $type => $value) {
