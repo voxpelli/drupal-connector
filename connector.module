@@ -10,6 +10,7 @@
 //TODO: React on disabling and uninstalling of another connector module
 //TODO: Show indication of the connection when logged in?
 //TODO: Create admin page where all subconnectors can be gathered? Or a category?
+//TODO: Is there really a need for a separate avatar callback?
 
 /**
  * Implementation of hook_theme().
@@ -333,7 +334,7 @@ function _connector_information_update($uid, $types = NULL) {
     }
     if (empty($types) || !empty($types['avatar'])) {
       if (variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
-        $avatar = call_user_func($connector['avatar callback'], $connections[0]->cid);
+        $avatar = call_user_func($connector['avatar callback'], $connections[0]->cid, $uid);
       }
       else {
         $avatar = FALSE;
