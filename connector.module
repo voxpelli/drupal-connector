@@ -11,17 +11,24 @@
 //TODO: Show indication of the connection when logged in?
 //TODO: Create admin page where all subconnectors can be gathered? Or a category?
 //TODO: Is there really a need for a separate avatar callback?
+//TODO: Make it possible to upload an icon for a button?
 
 /**
  * Implementation of hook_theme().
  */
 function connector_theme() {
   return array(
-    'connector_one_click_block' => array(
-      'template' => 'connector-one-click-block',
-      'arguments' => array('buttons' => array()),
+    'connector_buttons' => array(
+      'arguments' => array('form' => NULL),
     ),
   );
+}
+
+/**
+ * Implementation of hook_init().
+ */
+function connector_init() {
+  drupal_add_css(drupal_get_path('module', 'connector') . '/connector.css', 'module');
 }
 
 /**
@@ -63,7 +70,7 @@ function connector_block($op = 'list', $delta = 0) {
       case 'one_click_block':
         if (!$user->uid) {
           return array(
-            'content' => theme('connector_one_click_block'),
+            'content' => drupal_get_form('connector_button_form'),
           );
         }
         break;
@@ -140,6 +147,31 @@ function connector_views_api() {
     'api'  => 2,
     'path' => drupal_get_path('module', 'connector') .'/includes',
   );
+}
+
+function connector_button_form(&$form_state) {
+  $form = array(
+    '#theme' => 'connector_buttons',
+  );
+
+  $i = 0;
+  $connectors = _connector_get_connectors();
+
+  foreach ($connectors as $key => $connector) {
+    if (isset($connector['button callback']) && is_callable($connector['button callback'])) {
+      $form[$key] = array(
+        '#type'   => 'submit',
+        '#value'  => t('Connect with !title', array('!title' => $connector['title'])),
+        '#submit' => array($connector['button callback']),
+        'connector' => array(
+          '#type'  => 'value',
+          '#value' => $connector,
+        ),
+      );
+    }
+  }
+
+  return $form;
 }
 
 function _connector_cron_time() {
@@ -447,17 +479,34 @@ function _connector_information_update($uid, $types = NULL) {
   }
 }
 
-function template_preprocess_connector_one_click_block(&$vars) {
-  if (empty($vars['buttons'])) {
-    $vars['buttons'] = array();
-    $connectors = _connector_get_connectors();
-    foreach ($connectors as $key => $connector) {
-      //TODO: Make it possible to define buttons in a simpler way - like just creating
-      //      a theme function or by just supplying a url to where the button should
-      //      point and perhaps an image?
-      if (isset($connector['button callback']) && is_callable($connector['button callback'])) {
-        $vars['buttons'][] = call_user_func($connector['button callback']);
-      }
+function theme_connector_buttons($form) {
+  $output = '';
+  $buttons = array();
+  foreach ($form as $key => $value) {
+    if (substr($key, 0, 1) != '#') {
+      $buttons[$key] = $value;
     }
   }
+
+  $num_links = count($buttons);
+  $i = 1;
+
+  foreach ($buttons as $key => $value) {
+    $class = 'connector-' . str_replace('_', '-', $key);
+
+    if ($i == 1) {
+      $class .= ' first';
+    }
+    if ($i == $num_links) {
+      $class .= ' last';
+    }
+
+    $output .= '<li'. drupal_attributes(array('class' => $class)) .'>';
+    $output .= drupal_render($value);
+    $output .= '</li>';
+
+    $i += 1;
+  }
+
+  return '<ul class="connector-buttons">' . $output . '</ul>';
 }
