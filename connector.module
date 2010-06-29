@@ -83,7 +83,7 @@ function connector_user($op, &$edit, &$user, $category = NULL) {
         if (array_key_exists($connection->connector, $connectors)) {
           $connector = $connectors[$connection->connector];
           if (isset($connector['delete callback']) && is_callable($connector['delete callback'])) {
-            call_user_func($connector['delete callback'], $connection->cid);
+            call_user_func($connector['delete callback'], $connector, $connection->cid);
           }
         }
       }
@@ -98,7 +98,7 @@ function connector_user($op, &$edit, &$user, $category = NULL) {
         if (array_key_exists($connection->connector, $connectors)) {
           $connector = $connectors[$connection->connector];
           if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-            call_user_func($connector['logout callback'], $connection->cid);
+            call_user_func($connector['logout callback'], $connector, $connection->cid);
           }
         }
       }
@@ -165,6 +165,14 @@ function _connector_get_connectors($connector = NULL) {
 
   if (!isset($connectors)) {
     $connectors = (array) module_invoke_all('connector');
+
+    // Make sure all connectors has a reference to their own name
+    foreach (array_keys($connectors) as $key) {
+      if (!isset($connectors[$key]['name'])) {
+        $connectors[$key]['name'] = $key;
+      }
+    }
+
     drupal_alter('connector', $connectors);
   }
 
@@ -215,7 +223,7 @@ function _connector_log_in($connector_name, $cid = NULL) {
 
   //Fetch connector ID
   if ($cid === NULL && isset($connector['id callback']) && is_callable($connector['id callback'])) {
-    $cid = call_user_func($connector['id callback']);
+    $cid = call_user_func($connector['id callback'], $connector);
   }
 
   if ($cid !== NULL) {
@@ -247,7 +255,7 @@ function _connector_log_in($connector_name, $cid = NULL) {
           else {
             drupal_set_message(t('Your account is currently pending approval by the site administrator.'), 'warning');
             if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-              call_user_func($connector['logout callback'], $connection->cid);
+              call_user_func($connector['logout callback'], $connector, $connection->cid);
             }
           }
           watchdog('user', 'New external user: %name using module %module.', array('%name' => $username, '%module' => 'connector'), WATCHDOG_NOTICE, l(t('edit'), 'user/'. $new_account->uid .'/edit'));
@@ -256,7 +264,7 @@ function _connector_log_in($connector_name, $cid = NULL) {
       else {
         drupal_set_message(t('Only site administrators can create new user accounts.'), 'error');
         if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-          call_user_func($connector['logout callback'], $connection->cid);
+          call_user_func($connector['logout callback'], $connector, $connection->cid);
         }
       }
     }
@@ -271,7 +279,7 @@ function _connector_log_in($connector_name, $cid = NULL) {
       else {
         drupal_set_message(t('Your account is currently pending approval by the site administrator.'), 'warning');
         if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-          call_user_func($connector['logout callback'], $connection->cid);
+          call_user_func($connector['logout callback'], $connector, $connection->cid);
         }
       }
     }
@@ -324,7 +332,7 @@ function _connector_information_update($uid, $types = NULL) {
   $connector   = _connector_get_connectors($connections[0]->connector);
   if ($connector) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
-      $info = call_user_func($connector['information callback'], $connections[0]->cid, $types, $uid);
+      $info = call_user_func($connector['information callback'], $connector, $connections[0]->cid, $types, $uid);
     }
     $info = (array) $info;
     foreach ((array) $types as $type => $value) {
@@ -334,7 +342,7 @@ function _connector_information_update($uid, $types = NULL) {
     }
     if (empty($types) || !empty($types['avatar'])) {
       if (variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
-        $avatar = call_user_func($connector['avatar callback'], $connections[0]->cid, $uid);
+        $avatar = call_user_func($connector['avatar callback'], $connector, $connections[0]->cid, $uid);
       }
       else {
         $avatar = FALSE;
