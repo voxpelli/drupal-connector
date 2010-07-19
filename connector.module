@@ -12,6 +12,9 @@
 //TODO: Create admin page where all subconnectors can be gathered? Or a category?
 //TODO: Is there really a need for a separate avatar callback?
 //TODO: Make it possible to upload an icon for a button?
+//TODO: Make it possible to disable default login, create account etc?
+//TODO: Always refresh info on log in? Because we will most certainly have access to the info then. Need to make sure not to refresh too often though
+//TODO: Show status of connections to at least the admin - do that on eg. the user's profile page
 
 /**
  * Implementation of hook_theme().
@@ -37,13 +40,10 @@ function connector_init() {
 function connector_cron() {
   //TODO: If we don't have time to refresh all data - just remove the ones we didn't have time to refresh?
 
-  $time = time() - 14400; //4 hours x 3600 seconds per hour = 14400 - that gives us 4 hours to refresh them.
-
   while (_connector_cron_time()) {
     $result = db_query_range("SELECT uid, type, max_life FROM {connector_info} WHERE max_life < %d ORDER BY max_life ASC", array(
-      ':time' => $time,
+      ':time' => time(),
     ), 0, 20);
-
     if ($info = db_fetch_object($result)) {
       do {
         _connector_information_update($info->uid, array($info->type => $info->max_life));
@@ -360,13 +360,12 @@ function _connector_information_update($uid, $types = NULL) {
   }
 
   $connections = _connector_get_user_connections($uid);
-  //TODO: What if there are no connections? Will it fail then?
-  $connector   = _connector_get_connectors($connections[0]->connector);
+  $connector   = isset($connections[0]) ? _connector_get_connectors($connections[0]->connector) : FALSE;
   if ($connector) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
       $info = call_user_func($connector['information callback'], $connector, $connections[0]->cid, $types, $uid);
     }
-    $info = (array) $info;
+    $info = $info ? (array) $info : array();
     foreach ((array) $types as $type => $value) {
       if (!empty($value) && !array_key_exists($type, $info) && $type != 'avatar') {
         $info[$type] = FALSE;
@@ -377,13 +376,14 @@ function _connector_information_update($uid, $types = NULL) {
         $avatar = call_user_func($connector['avatar callback'], $connector, $connections[0]->cid, $uid);
       }
       else {
-        $avatar = FALSE;
+        $avatar = NULL;
       }
     }
     if (!empty($connector['cache'])) {
       $max_life = time() + $connector['cache'];
     }
     else {
+      //TODO: Make default cache time configurable?
       $max_life = time() + 432000; //5 days x 24 hours per day x 3600 seconds per hour = 432000
     }
   }
@@ -391,16 +391,33 @@ function _connector_information_update($uid, $types = NULL) {
   if (!empty($info)) {
     if (array_key_exists('real name', $info)) {
       $real_name = (object) array(
-        'uid'      => $uid,
-        'type'     => 'real name',
-        'value'    => empty($info['real name']) ? '' : $info['real name'], //TODO: Empty should be saved as NULL?
-        'max_life' => $max_life,
+        'uid'  => $uid,
+        'type' => 'real name',
       );
 
-      $existing = _connector_information_fetch($uid, array('real name' => TRUE), FALSE);
+      $existing = db_fetch_object(db_query("SELECT value, failure_level FROM {connector_info} WHERE uid = %d AND type = 'real name'", array(
+        ':uid' => $uid,
+      )));
 
-      if ($existing['real name'] !== FALSE) {
-        if ($existing['real name'] == $info['real name']) {
+      if ($info['real name'] === FALSE) {
+        $real_name->max_life = intval(time() + 30 * 60 * pow(5.6346264945, $existing->failure_level)); // 30 minutes * 60 seconds per minute * failure level 4 = delay of 3 weeks
+        if ($existing->failure_level < 4) {
+          $real_name->failure_level = $existing->failure_level + 1;
+        }
+      }
+      else {
+        $real_name->max_life = $max_life;
+        if ($existing && $existing->failure_level > 0) {
+          $real_name->failure_level = 0;
+        }
+      }
+
+      if ($info['real name'] !== FALSE || !empty($connector['invalidate old info'])) {
+        $real_name->value = empty($info['real name']) ? '' : $info['real name']; //TODO: Empty should be saved as NULL?
+      }
+
+      if ($existing !== FALSE) {
+        if ($existing->value == $info['real name']) {
           unset($real_name->value);
         }
         drupal_write_record('connector_info', $real_name, array('uid', 'type'));
@@ -414,17 +431,34 @@ function _connector_information_update($uid, $types = NULL) {
   }
 
   if (isset($avatar)) {
-    $account = user_load($uid);
+    if ($avatar !== FALSE || !empty($connector['invalidate old info'])) {
+      $account = user_load($uid);
 
-    if (isset($account->picture) && $account->picture != $destination && file_exists($account->picture)) {
-      file_delete($account->picture);
+      if (isset($account->picture) && $account->picture != $destination && file_exists($account->picture)) {
+        file_delete($account->picture);
+      }
     }
 
     $avatar_record = (object) array(
       'uid'      => $uid,
       'type'     => 'avatar',
-      'max_life' => $max_life,
     );
+
+    $existing = db_fetch_object(db_query("SELECT failure_level FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(
+      ':uid' => $uid,
+    )));
+
+    if ($avatar === FALSE) {
+      $avatar_record->max_life = time() + 30 * pow(5,6346264945, $existing->failure_level); // Failure level 4 = delay of 3 weeks
+      if ($existing->failure_level < 4) {
+        $avatar_record->failure_level = $avatar_record->failure_level + 1;
+      }
+    }
+    elseif ($existing->failure_level > 0) {
+      $avatar_record->max_life      = $max_life;
+      $avatar_record->failure_level = 0;
+    }
+
     if (db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(':uid' => $uid)))) {
       drupal_write_record('connector_info', $avatar_record, array('uid', 'type'));
     }

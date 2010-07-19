@@ -42,6 +42,14 @@ function connector_schema() {
         'default'     => 0,
         'description' => 'The Unix timestamp when info latest needs to be refreshed',
       ),
+      'failure_level' => array(
+        'type'        => 'int',
+        'size'        => 'tiny',
+        'unsigned'    => TRUE,
+        'not null'    => FALSE,
+        'default'     => 0,
+        'description' => 'The level of failure',
+      ),
     ),
     'primary key' => array('uid', 'type'),
     'indexes' => array(
