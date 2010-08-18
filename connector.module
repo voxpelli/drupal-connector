@@ -449,7 +449,7 @@ function _connector_information_update($uid, $types = NULL) {
     )));
 
     if ($avatar === FALSE) {
-      $avatar_record->max_life = time() + 30 * pow(5,6346264945, $existing->failure_level); // Failure level 4 = delay of 3 weeks
+      $avatar_record->max_life = time() + 30 * pow(5.6346264945, $existing->failure_level); // Failure level 4 = delay of 3 weeks
       if ($existing->failure_level < 4) {
         $avatar_record->failure_level = $avatar_record->failure_level + 1;
       }
@@ -517,7 +517,7 @@ function theme_connector_buttons($form) {
   $output = '';
   $buttons = array();
   foreach ($form as $key => $value) {
-    if (substr($key, 0, 1) != '#') {
+    if (drupal_substr($key, 0, 1) != '#') {
       $buttons[$key] = $value;
     }
   }
