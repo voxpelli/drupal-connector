@@ -9,17 +9,29 @@
 //TODO: Enable user to remove itself/it's connection from the site?
 //TODO: React on disabling and uninstalling of another connector module
 //TODO: Show indication of the connection when logged in?
+//TODO: Create admin page where all subconnectors can be gathered? Or a category?
+//TODO: Is there really a need for a separate avatar callback?
+//TODO: Make it possible to upload an icon for a button?
+//TODO: Make it possible to disable default login, create account etc?
+//TODO: Always refresh info on log in? Because we will most certainly have access to the info then. Need to make sure not to refresh too often though
+//TODO: Show status of connections to at least the admin - do that on eg. the user's profile page
 
 /**
  * Implementation of hook_theme().
  */
 function connector_theme() {
   return array(
-    'connector_one_click_block' => array(
-      'template' => 'connector-one-click-block',
-      'arguments' => array('buttons' => array()),
+    'connector_buttons' => array(
+      'arguments' => array('form' => NULL),
     ),
   );
+}
+
+/**
+ * Implementation of hook_init().
+ */
+function connector_init() {
+  drupal_add_css(drupal_get_path('module', 'connector') . '/connector.css', 'module');
 }
 
 /**
@@ -28,13 +40,10 @@ function connector_theme() {
 function connector_cron() {
   //TODO: If we don't have time to refresh all data - just remove the ones we didn't have time to refresh?
 
-  $time = time() - 14400; //4 hours x 3600 seconds per hour = 14400 - that gives us 4 hours to refresh them.
-
   while (_connector_cron_time()) {
     $result = db_query_range("SELECT uid, type, max_life FROM {connector_info} WHERE max_life < %d ORDER BY max_life ASC", array(
-      ':time' => $time,
+      ':time' => time(),
     ), 0, 20);
-
     if ($info = db_fetch_object($result)) {
       do {
         _connector_information_update($info->uid, array($info->type => $info->max_life));
@@ -53,7 +62,7 @@ function connector_block($op = 'list', $delta = 0) {
   global $user;
 
   if ($op == 'list') {
-    $block['one_click_block']['info'] = t('Sign in with other site');
+    $block['one_click_block']['info'] = t('Connector');
     return $block;
   }
   elseif ($op == 'view') {
@@ -61,7 +70,7 @@ function connector_block($op = 'list', $delta = 0) {
       case 'one_click_block':
         if (!$user->uid) {
           return array(
-            'content' => theme('connector_one_click_block'),
+            'content' => drupal_get_form('connector_button_form'),
           );
         }
         break;
@@ -81,7 +90,7 @@ function connector_user($op, &$edit, &$user, $category = NULL) {
         if (array_key_exists($connection->connector, $connectors)) {
           $connector = $connectors[$connection->connector];
           if (isset($connector['delete callback']) && is_callable($connector['delete callback'])) {
-            call_user_func($connector['delete callback'], $connection->cid);
+            call_user_func($connector['delete callback'], $connector, $connection->cid);
           }
         }
       }
@@ -96,7 +105,7 @@ function connector_user($op, &$edit, &$user, $category = NULL) {
         if (array_key_exists($connection->connector, $connectors)) {
           $connector = $connectors[$connection->connector];
           if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-            call_user_func($connector['logout callback'], $connection->cid);
+            call_user_func($connector['logout callback'], $connector, $connection->cid);
           }
         }
       }
@@ -124,7 +133,7 @@ function connector_realname_make($account) {
   if ($info['real name'] === FALSE) {
     return NULL;
   }
-  else if (empty($info['real name'])) {
+  elseif (empty($info['real name'])) {
     return t('Hidden name');
   }
   return $info['real name'];
@@ -138,6 +147,31 @@ function connector_views_api() {
     'api'  => 2,
     'path' => drupal_get_path('module', 'connector') .'/includes',
   );
+}
+
+function connector_button_form(&$form_state) {
+  $form = array(
+    '#theme' => 'connector_buttons',
+  );
+
+  $i = 0;
+  $connectors = _connector_get_connectors();
+
+  foreach ($connectors as $key => $connector) {
+    if (isset($connector['button callback']) && is_callable($connector['button callback'])) {
+      $form[$key] = array(
+        '#type'   => 'submit',
+        '#value'  => t('Connect with !title', array('!title' => $connector['title'])),
+        '#submit' => array($connector['button callback']),
+        'connector' => array(
+          '#type'  => 'value',
+          '#value' => $connector,
+        ),
+      );
+    }
+  }
+
+  return $form;
 }
 
 function _connector_cron_time() {
@@ -163,6 +197,14 @@ function _connector_get_connectors($connector = NULL) {
 
   if (!isset($connectors)) {
     $connectors = (array) module_invoke_all('connector');
+
+    // Make sure all connectors has a reference to their own name
+    foreach (array_keys($connectors) as $key) {
+      if (!isset($connectors[$key]['name'])) {
+        $connectors[$key]['name'] = $key;
+      }
+    }
+
     drupal_alter('connector', $connectors);
   }
 
@@ -199,7 +241,7 @@ function _connector_get_user_connections($uid) {
   return $connectors;
 }
 
-function _connector_log_in($connector_name) {
+function _connector_log_in($connector_name, $cid = NULL) {
   global $user;
 
   if (user_is_logged_in()) {
@@ -212,11 +254,11 @@ function _connector_log_in($connector_name) {
   }
 
   //Fetch connector ID
-  if (isset($connector['id callback']) && is_callable($connector['id callback'])) {
-    $cid = call_user_func($connector['id callback']);
+  if ($cid === NULL && isset($connector['id callback']) && is_callable($connector['id callback'])) {
+    $cid = call_user_func($connector['id callback'], $connector);
   }
 
-  if ($cid) {
+  if ($cid !== NULL) {
     $username = $connector_name . '__' . $cid;
     $account = user_external_load($username);
     if (!$account) {
@@ -245,7 +287,7 @@ function _connector_log_in($connector_name) {
           else {
             drupal_set_message(t('Your account is currently pending approval by the site administrator.'), 'warning');
             if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-              call_user_func($connector['logout callback'], $connection->cid);
+              call_user_func($connector['logout callback'], $connector, $connection->cid);
             }
           }
           watchdog('user', 'New external user: %name using module %module.', array('%name' => $username, '%module' => 'connector'), WATCHDOG_NOTICE, l(t('edit'), 'user/'. $new_account->uid .'/edit'));
@@ -254,7 +296,7 @@ function _connector_log_in($connector_name) {
       else {
         drupal_set_message(t('Only site administrators can create new user accounts.'), 'error');
         if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-          call_user_func($connector['logout callback'], $connection->cid);
+          call_user_func($connector['logout callback'], $connector, $connection->cid);
         }
       }
     }
@@ -269,7 +311,7 @@ function _connector_log_in($connector_name) {
       else {
         drupal_set_message(t('Your account is currently pending approval by the site administrator.'), 'warning');
         if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
-          call_user_func($connector['logout callback'], $connection->cid);
+          call_user_func($connector['logout callback'], $connector, $connection->cid);
         }
       }
     }
@@ -278,7 +320,7 @@ function _connector_log_in($connector_name) {
   return FALSE;
 }
 
-function _connector_information_fetch($uid, $types = NULL, $update = TRUE) {
+function _connector_information_fetch($uid, $types = NULL, $update = TRUE, $reset = FALSE) {
   //TODO: Use $types if more info is added for a user
   static $cache;
 
@@ -290,7 +332,11 @@ function _connector_information_fetch($uid, $types = NULL, $update = TRUE) {
     $cache = array();
   }
 
-  if (!isset($cache[$uid])) {
+  if ($reset) {
+    unset($cache[$uid]);
+    return;
+  }
+  elseif (!isset($cache[$uid])) {
     $result = db_result(db_query("SELECT value FROM {connector_info} WHERE uid = %d AND type = 'real name'", array(
       ':uid' => $uid,
     )));
@@ -314,12 +360,12 @@ function _connector_information_update($uid, $types = NULL) {
   }
 
   $connections = _connector_get_user_connections($uid);
-  $connector   = _connector_get_connectors($connections[0]->connector);
+  $connector   = isset($connections[0]) ? _connector_get_connectors($connections[0]->connector) : FALSE;
   if ($connector) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
-      $info = call_user_func($connector['information callback'], $connections[0]->cid, $types);
+      $info = call_user_func($connector['information callback'], $connector, $connections[0]->cid, $types, $uid);
     }
-    $info = (array) $info;
+    $info = $info ? (array) $info : array();
     foreach ((array) $types as $type => $value) {
       if (!empty($value) && !array_key_exists($type, $info) && $type != 'avatar') {
         $info[$type] = FALSE;
@@ -327,16 +373,17 @@ function _connector_information_update($uid, $types = NULL) {
     }
     if (empty($types) || !empty($types['avatar'])) {
       if (variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
-        $avatar = call_user_func($connector['avatar callback'], $connections[0]->cid);
+        $avatar = call_user_func($connector['avatar callback'], $connector, $connections[0]->cid, $uid);
       }
       else {
-        $avatar = FALSE;
+        $avatar = NULL;
       }
     }
     if (!empty($connector['cache'])) {
       $max_life = time() + $connector['cache'];
     }
     else {
+      //TODO: Make default cache time configurable?
       $max_life = time() + 432000; //5 days x 24 hours per day x 3600 seconds per hour = 432000
     }
   }
@@ -344,16 +391,33 @@ function _connector_information_update($uid, $types = NULL) {
   if (!empty($info)) {
     if (array_key_exists('real name', $info)) {
       $real_name = (object) array(
-        'uid'      => $uid,
-        'type'     => 'real name',
-        'value'    => empty($info['real name']) ? '' : $info['real name'], //TODO: Empty should be saved as NULL?
-        'max_life' => $max_life,
+        'uid'  => $uid,
+        'type' => 'real name',
       );
 
-      $existing = _connector_information_fetch($uid, array('real name' => TRUE), FALSE);
+      $existing = db_fetch_object(db_query("SELECT value, failure_level FROM {connector_info} WHERE uid = %d AND type = 'real name'", array(
+        ':uid' => $uid,
+      )));
 
-      if ($existing['real name'] !== FALSE) {
-        if ($existing['real name'] == $info['real name']) {
+      if ($info['real name'] === FALSE) {
+        $real_name->max_life = intval(time() + 30 * 60 * pow(5.6346264945, $existing->failure_level)); // 30 minutes * 60 seconds per minute * failure level 4 = delay of 3 weeks
+        if ($existing->failure_level < 4) {
+          $real_name->failure_level = $existing->failure_level + 1;
+        }
+      }
+      else {
+        $real_name->max_life = $max_life;
+        if ($existing && $existing->failure_level > 0) {
+          $real_name->failure_level = 0;
+        }
+      }
+
+      if ($info['real name'] !== FALSE || !empty($connector['invalidate old info'])) {
+        $real_name->value = empty($info['real name']) ? '' : $info['real name']; //TODO: Empty should be saved as NULL?
+      }
+
+      if ($existing !== FALSE) {
+        if ($existing->value == $info['real name']) {
           unset($real_name->value);
         }
         drupal_write_record('connector_info', $real_name, array('uid', 'type'));
@@ -361,21 +425,40 @@ function _connector_information_update($uid, $types = NULL) {
       else {
         drupal_write_record('connector_info', $real_name);
       }
+
+      _connector_information_fetch($uid, NULL, FALSE, TRUE);
     }
   }
 
   if (isset($avatar)) {
-    $account = user_load($uid);
+    if ($avatar !== FALSE || !empty($connector['invalidate old info'])) {
+      $account = user_load($uid);
 
-    if (isset($account->picture) && $account->picture != $destination && file_exists($account->picture)) {
-      file_delete($account->picture);
+      if (isset($account->picture) && $account->picture != $destination && file_exists($account->picture)) {
+        file_delete($account->picture);
+      }
     }
 
     $avatar_record = (object) array(
       'uid'      => $uid,
       'type'     => 'avatar',
-      'max_life' => $max_life,
     );
+
+    $existing = db_fetch_object(db_query("SELECT failure_level FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(
+      ':uid' => $uid,
+    )));
+
+    if ($avatar === FALSE) {
+      $avatar_record->max_life = time() + 30 * pow(5,6346264945, $existing->failure_level); // Failure level 4 = delay of 3 weeks
+      if ($existing->failure_level < 4) {
+        $avatar_record->failure_level = $avatar_record->failure_level + 1;
+      }
+    }
+    elseif ($existing->failure_level > 0) {
+      $avatar_record->max_life      = $max_life;
+      $avatar_record->failure_level = 0;
+    }
+
     if (db_result(db_query("SELECT COUNT(*) FROM {connector_info} WHERE uid = %d AND type = 'avatar'", array(':uid' => $uid)))) {
       drupal_write_record('connector_info', $avatar_record, array('uid', 'type'));
     }
@@ -430,14 +513,34 @@ function _connector_information_update($uid, $types = NULL) {
   }
 }
 
-function template_preprocess_connector_one_click_block(&$vars) {
-  if (empty($vars['buttons'])) {
-    $vars['buttons'] = array();
-    $connectors = _connector_get_connectors();
-    foreach ($connectors as $key => $connector) {
-      if (isset($connector['button callback']) && is_callable($connector['button callback'])) {
-        $vars['buttons'][] = call_user_func($connector['button callback']);
-      }
+function theme_connector_buttons($form) {
+  $output = '';
+  $buttons = array();
+  foreach ($form as $key => $value) {
+    if (substr($key, 0, 1) != '#') {
+      $buttons[$key] = $value;
     }
   }
+
+  $num_links = count($buttons);
+  $i = 1;
+
+  foreach ($buttons as $key => $value) {
+    $class = 'connector-' . str_replace('_', '-', $key);
+
+    if ($i == 1) {
+      $class .= ' first';
+    }
+    if ($i == $num_links) {
+      $class .= ' last';
+    }
+
+    $output .= '<li'. drupal_attributes(array('class' => $class)) .'>';
+    $output .= drupal_render($value);
+    $output .= '</li>';
+
+    $i += 1;
+  }
+
+  return '<ul class="connector-buttons">' . $output . '</ul>';
 }

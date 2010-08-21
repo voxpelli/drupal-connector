@@ -42,6 +42,14 @@ function connector_schema() {
         'default'     => 0,
         'description' => 'The Unix timestamp when info latest needs to be refreshed',
       ),
+      'failure_level' => array(
+        'type'        => 'int',
+        'size'        => 'tiny',
+        'unsigned'    => TRUE,
+        'not null'    => FALSE,
+        'default'     => 0,
+        'description' => 'The level of failure',
+      ),
     ),
     'primary key' => array('uid', 'type'),
     'indexes' => array(
@@ -82,7 +90,7 @@ function connector_requirements($phase) {
       $requirements['user_email_verification'] = array(
         'title'       => $t('User E-mail Address'),
         'value'       => $t('Required'),
-        'description' => $t("A user registered through a connector doesn't have an e-mail address - it is recommended to !remove the requirement.", array('!remove' => l($t('remove'), 'admin/user/settings'))),
+        'description' => $t("Since a user that's registered through a connector doesn't have an e-mail address it is recommended to !remove the requirement.", array('!remove' => l($t('remove'), 'admin/user/settings'))),
         'severity'    => REQUIREMENT_WARNING,
       );
     }
