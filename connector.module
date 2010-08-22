@@ -15,6 +15,7 @@
 //TODO: Make it possible to disable default login, create account etc?
 //TODO: Always refresh info on log in? Because we will most certainly have access to the info then. Need to make sure not to refresh too often though
 //TODO: Show status of connections to at least the admin - do that on eg. the user's profile page
+//TODO: Should the backing of really be in this module?
 
 /**
  * Implementation of hook_theme().
