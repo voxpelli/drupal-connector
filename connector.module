@@ -123,6 +123,9 @@ function connector_user($op, &$edit, &$user, $category = NULL) {
       db_query('DELETE FROM {connector_info} WHERE uid = %d', array(
         ':uid' => $user->uid,
       ));
+      db_query('DELETE FROM {connector_user} WHERE uid = %d', array(
+        ':uid' => $user->uid,
+      ));
       break;
     case 'logout':
       $connectors  = _connector_get_connectors();
@@ -283,6 +286,48 @@ function _connector_get_user_connections($uid) {
   return $connectors;
 }
 
+function _connector_get_primary_connection($uid) {
+  $result = FALSE;
+
+  if (is_object($uid)) {
+    $uid = $uid->uid;
+  }
+
+  $primary_connection = db_result(db_query("SELECT primary_connection FROM {connector_user} WHERE uid = %d", $uid));
+  if ($primary_connection) {
+    $row = explode('__', $primary_connection, 2);
+    if (count($row) === 2) {
+      $result = (object) array(
+        'connector' => $row[0],
+        'cid' => $row[1],
+      );
+    }
+  }
+
+  return $result;
+}
+
+function _connector_set_primary_connection($uid, $connection) {
+  if (is_object($uid)) {
+    $uid = $uid->uid;
+  }
+  if (is_object($connection)) {
+    $connection = ($connection->connector . '__' . $connection->cid);
+  }
+
+  db_query("UPDATE {connector_user} SET primary_connection = '%s' WHERE uid = %d", array(
+    ':primary_connection' => $connection,
+    ':uid' => $uid,
+  ));
+  if (!db_affected_rows()) {
+    db_query("INSERT INTO {connector_user} (uid, primary_connection) VALUES (%d, '%s')", array(
+      ':uid' => $uid,
+      ':primary_connection' => $connection,
+    ));
+  }
+}
+
+
 function _connector_log_in($connector_name, $cid = NULL) {
   global $user;
 
@@ -321,6 +366,7 @@ function _connector_log_in($connector_name, $cid = NULL) {
         }
         else {
           db_query("INSERT INTO {authmap} (uid, authname, module) VALUES (%d, '%s','connector')", $new_account->uid, $authname);
+          _connector_set_primary_connection($new_account->uid, $authname);
           _connector_information_update($new_account);
           if ($new_account->status) {
             $user = $new_account;
@@ -391,6 +437,9 @@ function _connector_add_connection($connector_name, $cid = NULL, $uid = NULL) {
     // Check if the external id already connected to someone
     if (!$account) {
       $result = (bool)db_query("INSERT INTO {authmap} (uid, authname, module) VALUES (%d, '%s','connector')", $uid, $authname);
+      if (!_connector_get_primary_connection($uid)) {
+        _connector_set_primary_connection($uid, $authname);
+      }
     }
     else {
       $result = TRUE;
@@ -439,11 +488,11 @@ function _connector_information_update($uid, $types = NULL) {
     $uid = $uid->uid;
   }
 
-  $connections = _connector_get_user_connections($uid);
-  $connector   = isset($connections[0]) ? _connector_get_connectors($connections[0]->connector) : FALSE;
+  $connection = _connector_get_primary_connection($uid);
+  $connector   = isset($connection) ? _connector_get_connectors($connection->connector) : FALSE;
   if ($connector) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
-      $info = call_user_func($connector['information callback'], $connector, $connections[0]->cid, $types, $uid);
+      $info = call_user_func($connector['information callback'], $connector, $connection->cid, $types, $uid);
     }
     $info = $info ? (array) $info : array();
     foreach ((array) $types as $type => $value) {
@@ -453,7 +502,7 @@ function _connector_information_update($uid, $types = NULL) {
     }
     if (empty($types) || !empty($types['avatar'])) {
       if (variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
-        $avatar = call_user_func($connector['avatar callback'], $connector, $connections[0]->cid, $uid);
+        $avatar = call_user_func($connector['avatar callback'], $connector, $connection->cid, $uid);
       }
       else {
         $avatar = NULL;

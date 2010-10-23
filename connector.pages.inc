@@ -13,15 +13,17 @@ function connector_user_settings($account) {
   $output = '';
 
   $connections = _connector_get_user_connections($account);
+  $primary     = _connector_get_primary_connection($account);
+
   if (!empty($connections)) {
-    $output .= drupal_get_form('connector_connections_list', $connections);
+    $output .= drupal_get_form('connector_connections_list', $connections, $primary, $account);
   }
   $output .= drupal_get_form('connector_button_form', $account);
 
   return $output;
 }
 
-function connector_connections_list($form_state, $connections = array()) {
+function connector_connections_list($form_state, $connections, $primary, $account) {
   $header = array(
     'connector'  => t('Connection'),
     'cid'        => t('External Id'),
@@ -38,13 +40,16 @@ function connector_connections_list($form_state, $connections = array()) {
     );
   }
 
+  $primary = ($primary->connector . '__' . $primary->cid);
+
   if (module_exists('elements')) {
-    $form['synchronisation'] = array(
-      '#type'     => 'tableselect',
-      '#header'   => $header,
-      '#options'  => $options,
-      '#multiple' => FALSE,
-      '#empty'    => t('No connections available.'),
+    $form['primary'] = array(
+      '#type'          => 'tableselect',
+      '#header'        => $header,
+      '#options'       => $options,
+      '#multiple'      => FALSE,
+      '#empty'         => t('No connections available.'),
+      '#default_value' => $primary,
     );
   }
   else {
@@ -59,17 +64,23 @@ function connector_connections_list($form_state, $connections = array()) {
       $form['cid'][$key]        = array('#value' => check_plain($option['cid']));
       $form['operations'][$key] = array('#value' => $option['operations']);
     }
-    $form['synchronisation'] = array(
-      '#type'    => 'radios',
-      '#options' => $radios,
+    $form['primary'] = array(
+      '#type'          => 'radios',
+      '#options'       => $radios,
+      '#default_value' => $primary,
     );
     $form['#theme'] = 'connector_connections_list_tableselect';
   }
 
+  $form['account'] = array(
+    '#type'  => 'value',
+    '#value' => $account,
+  );
+
   if (!empty($connections)) {
     $form['buttons']['submit'] = array(
       '#type'  => 'submit',
-      '#value' => t('Save synchronization source'),
+      '#value' => t('Set primary connection'),
     );
   }
 
@@ -88,7 +99,7 @@ function theme_connector_connections_list_tableselect($form) {
   if (!empty($form['connector'])) {
     foreach (element_children($form['connector']) as $key) {
       $row = array();
-      $row[] = drupal_render($form['synchronisation'][$key]);
+      $row[] = drupal_render($form['primary'][$key]);
       $row[] = drupal_render($form['connector'][$key]);
       $row[] = drupal_render($form['cid'][$key]);
       $row[] = drupal_render($form['operations'][$key]);
@@ -106,13 +117,7 @@ function theme_connector_connections_list_tableselect($form) {
 }
 
 function connector_connections_list_submit($form, &$form_state) {
-/*  $accounts = $form_state['values']['accounts'];
-  foreach($accounts as $account) {
-    if (empty($account['delete'])) {
-      twitter_account_save($account);
-    }
-    else {
-      twitter_user_delete($account['id'], $account['screen_name']);
-    }
-  }*/
+  $primary = $form_state['values']['primary'];
+  $account = $form_state['values']['account'];
+  _connector_set_primary_connection($account, $primary);
 }
