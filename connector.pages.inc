@@ -22,68 +22,86 @@ function connector_user_settings($account) {
 }
 
 function connector_connections_list($form_state, $connections = array()) {
-  $form['#tree'] = TRUE;
-  $form['connections'] = array();
+  $header = array(
+    'connector'  => t('Connection'),
+    'cid'        => t('External Id'),
+    'operations' => t('Operations'),
+  );
 
+  $options = array();
   foreach ($connections as $connection) {
-    $form['connections'][] = _connector_connections_list_row($connection);
+    $connector = _connector_get_connectors($connection->connector);
+    $options[$connection->connector . '__' . $connection->cid] = array(
+      'connector'  => $connector['title'],
+      'cid'        => $connection->cid,
+      'operations' => '<a href="#">remove</a>',
+    );
+  }
+
+  if (module_exists('elements')) {
+    $form['synchronisation'] = array(
+      '#type'     => 'tableselect',
+      '#header'   => $header,
+      '#options'  => $options,
+      '#multiple' => FALSE,
+      '#empty'    => t('No connections available.'),
+    );
+  }
+  else {
+    $radios  = array();
+    $form['headers'] = array();
+    foreach ($header as $key => $value) {
+      $form['header'][$key] = array('#value' => $value);
+    }
+    foreach ($options as $key => $option) {
+      $radios[$key] = '';
+      $form['connector'][$key]  = array('#value' => check_plain($option['connector']));
+      $form['cid'][$key]        = array('#value' => check_plain($option['cid']));
+      $form['operations'][$key] = array('#value' => $option['operations']);
+    }
+    $form['synchronisation'] = array(
+      '#type'    => 'radios',
+      '#options' => $radios,
+    );
+    $form['#theme'] = 'connector_connections_list_tableselect';
   }
 
   if (!empty($connections)) {
     $form['buttons']['submit'] = array(
       '#type'  => 'submit',
-      '#value' => t('Save changes'),
+      '#value' => t('Save synchronization source'),
     );
   }
 
   return $form;
 }
 
-function _connector_connections_list_row($connection) {
-  $form['#connection'] = $connection;
+function theme_connector_connections_list_tableselect($form) {
+  $header = array('');
 
-  $form['cid'] = array(
-    '#type'  => 'markup',
-    '#value' => check_plain($connection->cid),
-  );
-
-  $form['connector'] = array(
-    '#type'  => 'markup',
-    '#value' => check_plain($connection->connector),
-  );
-
-  $form['import'] = array(
-    '#type' => 'checkbox',
-//    '#default_value' => $account->import,
-  );
-  
-  $form['delete'] = array(
-    '#type' => 'checkbox',
-  );
-
-  return $form;
-}
-
-function theme_connector_connections_list($form) {
-  $header = array(t('Connector Id'), t('Connector'), t('Import'), t('Delete')); 
+  foreach (element_children($form['header']) as $key) {
+    $header[] = drupal_render($form['header'][$key]);
+  }
 
   $rows = array();
 
-  foreach (element_children($form['connections']) as $key) {
-    $element = &$form['connections'][$key];
-
-    $row = array();
-    foreach ($element as $element_key => $element_value) {
-      if (substr($element_key, 0, 1) != '#') {
-        $row[] = drupal_render($element[$element_key]);
-      }
+  if (!empty($form['connector'])) {
+    foreach (element_children($form['connector']) as $key) {
+      $row = array();
+      $row[] = drupal_render($form['synchronisation'][$key]);
+      $row[] = drupal_render($form['connector'][$key]);
+      $row[] = drupal_render($form['cid'][$key]);
+      $row[] = drupal_render($form['operations'][$key]);
+      $rows[] = $row;
     }
-
-    $rows[] = $row;
+  }
+  else {
+    $rows[] = array(array('data' => t('No connections available.'), 'colspan' => '6'));
   }
 
   $output = theme('table', $header, $rows);
   $output .= drupal_render($form);
+
   return $output;
 }
 

@@ -25,7 +25,7 @@ function connector_theme() {
     'connector_buttons' => array(
       'arguments' => array('form' => NULL),
     ),
-    'connector_connections_list' => array(
+    'connector_connections_list_tableselect' => array(
       'arguments' => array('form' => NULL),
     )
   );
