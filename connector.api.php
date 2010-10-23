@@ -26,7 +26,9 @@
   *   - "logout callback": A function...
   *   - "information callback": A function...
   *   - "avatar callback": A function...
+  *   - "delete callback": A function...
   *   - "cache": A number defining the maximum amount of seconds to cache external data.
+  *   - "invalidate old info": A boolean defining if old data should be considered invalid
   */
 function hook_connector() {
   return array(
@@ -38,6 +40,7 @@ function hook_connector() {
       'logout callback'         => '_exampleconnector_logout',
       'information callback'    => '_exampleconnector_info',
       'avatar callback'         => '_exampleconnector_avatar',
+      'delete callback'         => '_exampleconnector_delete',
       'cache'                   => 72000, //20 hours x 3600 seconds per hour
       'invalidate old info'     => TRUE,
     ),
