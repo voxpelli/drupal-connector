@@ -6,10 +6,11 @@
  * Connector module
  */
 
+//TODO: Make the user edit page more themable by other modules/themes - they should be able to rearrange or hide parts of it
+//TODO: Check whether 'invalidate old info' is set or not in hook_requirements()?
 //TODO: Enable user to remove itself/it's connection from the site?
 //TODO: React on disabling and uninstalling of another connector module
 //TODO: Show indication of the connection when logged in?
-//TODO: Create admin page where all subconnectors can be gathered? Or a category?
 //TODO: Is there really a need for a separate avatar callback?
 //TODO: Make it possible to upload an icon for a button?
 //TODO: Make it possible to disable default login, create account etc?
@@ -483,7 +484,6 @@ function _connector_information_fetch($uid, $types = NULL, $update = TRUE, $rese
 
 function _connector_information_update($uid, $types = NULL) {
   //TODO: Configure more types of information that we want fetched?
-  //TODO: Configure fetching information from many sources?
   if (is_object($uid)) {
     $uid = $uid->uid;
   }

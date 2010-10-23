@@ -120,4 +120,6 @@ function connector_connections_list_submit($form, &$form_state) {
   $primary = $form_state['values']['primary'];
   $account = $form_state['values']['account'];
   _connector_set_primary_connection($account, $primary);
+  //TODO: Trigger an update of the users information somehow?
+  //TODO: Need to make sure that all values are rechecked - eg checking for an avatar even if the old source didn't have one
 }
