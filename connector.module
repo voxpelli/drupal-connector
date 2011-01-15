@@ -17,6 +17,9 @@
 //TODO: Always refresh info on log in? Because we will most certainly have access to the info then. Need to make sure not to refresh too often though
 //TODO: Show status of connections to at least the admin - do that on eg. the user's profile page
 //TODO: Should the backing of really be in this module?
+//TODO: Move syncing of info to a hook-system that everyone can hook into?
+//TODO: Provide more hooks!
+//TODO: Remove $uid from info callbacks?
 
 /**
  * Implementation of hook_theme().
