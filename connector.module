@@ -492,7 +492,7 @@ function _connector_information_update($uid, $types = NULL) {
   $connector = isset($connection) ? _connector_get_connectors($connection->connector) : FALSE;
   if ($connector) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
-      $info = call_user_func($connector['information callback'], $connector, $connection->cid, $types, $uid);
+      $info = call_user_func($connector['information callback'], $connector, $connection->cid, $types);
     }
     $info = $info ? (array) $info : array();
     foreach ((array) $types as $type => $value) {
@@ -502,7 +502,7 @@ function _connector_information_update($uid, $types = NULL) {
     }
     if (empty($types) || !empty($types['avatar'])) {
       if (variable_get('user_pictures', 0) && isset($connector['avatar callback']) && is_callable($connector['avatar callback'])) {
-        $avatar = call_user_func($connector['avatar callback'], $connector, $connection->cid, $uid);
+        $avatar = call_user_func($connector['avatar callback'], $connector, $connection->cid);
       }
       else {
         $avatar = NULL;
