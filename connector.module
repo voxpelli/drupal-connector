@@ -489,7 +489,7 @@ function _connector_information_update($uid, $types = NULL) {
   }
 
   $connection = _connector_get_primary_connection($uid);
-  $connector   = isset($connection) ? _connector_get_connectors($connection->connector) : FALSE;
+  $connector = isset($connection) ? _connector_get_connectors($connection->connector) : FALSE;
   if ($connector) {
     if (isset($connector['information callback']) && is_callable($connector['information callback'])) {
       $info = call_user_func($connector['information callback'], $connector, $connection->cid, $types, $uid);
