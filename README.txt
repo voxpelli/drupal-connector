@@ -1,4 +1,3 @@
-/* $Id$ */
 
 General third party connection module for Drupal that makes it easier to
 enable users to one click login (and register) through connect-services like
