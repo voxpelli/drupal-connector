@@ -1,5 +1,4 @@
 name = Connector
 description = Provides base functionality for one-click login with eg. Facebook Connect and Twitter Connect
 core = 6.x
-version = "6.x-0.1"
 package = "Connector"
